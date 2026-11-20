@@ -17,6 +17,7 @@ import {DirectorySettings} from './directory';
 import {directoryProfile} from '@/lib/directory';
 import './directory-settings.css';
 import {Integrations} from './integrations';
+import {hostedDemoEnabled} from '@/lib/confirmation';
 
 const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const order=[1,2,3,4,5,6,0];
@@ -31,7 +32,7 @@ export default async function SettingsPage({params,searchParams}:{params:Promise
  {section==='salon'&&salon&&<SalonSettings shopId={id} initial={salon}/>}
  {section==='rules'&&<BookingRules shopId={id} shopName={shop.name}/>}
  {section==='import'&&<FreshaImport shopId={id} shopName={shop.name} location={shop.location}/>}
- {section==='reminders'&&<Reminders shopId={id} local={process.env.NODE_ENV==='development'}/>}
+ {section==='reminders'&&<Reminders shopId={id} local={process.env.NODE_ENV==='development'||(hostedDemoEnabled()&&id==='rimu')}/>}
  {section==='integrations'&&<Integrations shopId={id} callbackStatus={query.calendar} barbers={barbers.rows.map(b=>({id:b.id,name:b.name}))}/>}
  {section==='billing'&&billing&&<Billing shopId={id} initial={billing}/>}
  {section==='hours'&&<HoursForm shopId={id} hours={hours.rows}/>}
