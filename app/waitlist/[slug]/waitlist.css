@@ -1,0 +1,2 @@
+.guest-form .waitlist-days label{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:7px 9px}
+.guest-form .waitlist-days input[type=checkbox]{display:inline-block;flex:none;width:16px;height:16px;margin:0;padding:0;accent-color:#184b3b}

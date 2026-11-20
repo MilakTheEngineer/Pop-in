@@ -1,0 +1,9 @@
+import {NextResponse} from 'next/server';
+import {sameOrigin} from '@/lib/request-origin';
+import {shopAccess,ShopAccessDenied} from '@/lib/auth';
+import {BookingError} from '@/lib/booking';
+import {clientList,clientDetail,createClient,updateClient,updateNotes,reassignVisit} from '@/lib/clients';
+export const dynamic='force-dynamic';
+function fail(e:unknown){if(e instanceof BookingError)return NextResponse.json({error:e.message},{status:400});if(e instanceof ShopAccessDenied)return NextResponse.json({error:'Shop access denied.'},{status:403});if(typeof e==='object'&&e!==null&&'digest' in e&&String(e.digest).startsWith('NEXT_REDIRECT'))return NextResponse.json({error:'Sign in required.'},{status:401});console.error('Client request failed',e);return NextResponse.json({error:'Unable to update clients. Please try again.'},{status:500});}
+export async function GET(request:Request){try{const p=new URL(request.url).searchParams,shop=p.get('shop')||'',id=p.get('id');await shopAccess(shop);const result=id?await clientDetail(shop,id):await clientList(shop,(p.get('q')||'').trim());return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}})}catch(e){return fail(e)}}
+export async function POST(request:Request){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request.'},{status:403});try{const d=await request.json();if(!d||typeof d!=='object'||Array.isArray(d))throw new BookingError('Invalid request.');const shop=typeof d.shopId==='string'?d.shopId:'';await shopAccess(shop);let result;switch(d.action){case 'create':result=await createClient(shop,d);break;case 'update':result=await updateClient(shop,d);break;case 'notes':result=await updateNotes(shop,d);break;case 'reassign':result=await reassignVisit(shop,d);break;default:throw new BookingError('Invalid action.')}return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}})}catch(e){return fail(e)}}

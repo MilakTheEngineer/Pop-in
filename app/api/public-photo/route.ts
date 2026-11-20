@@ -1,0 +1,3 @@
+import {db} from '@/lib/db';
+import {publicShop} from '@/lib/guest';
+export async function GET(request:Request){const slug=new URL(request.url).searchParams.get('shop')||'',shop=await publicShop(slug);if(!shop)return new Response('Not found',{status:404});const r=await db.query('SELECT photo,photo_type FROM shops WHERE id=$1',[shop.id]);if(!r.rows[0]?.photo)return new Response('Not found',{status:404});return new Response(r.rows[0].photo,{headers:{'Content-Type':r.rows[0].photo_type,'Cache-Control':shop.booking_published?'public, max-age=60':'private, no-store','X-Content-Type-Options':'nosniff'}})}

@@ -1,0 +1,10 @@
+import {NextResponse} from 'next/server';
+import {sameOrigin} from '@/lib/request-origin';
+import {shopAccess,shopOwnerAccess,ShopAccessDenied,ShopOwnerAccessDenied,isShopOwner} from '@/lib/auth';
+import {BookingError} from '@/lib/booking';
+import {checkoutView,issueCheckoutReceipt,recordCheckout} from '@/lib/checkout';
+const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'};
+export const dynamic='force-dynamic';
+function fail(e:unknown){if(e instanceof BookingError)return NextResponse.json({error:e.message},{status:400,headers});if(e instanceof ShopAccessDenied||e instanceof ShopOwnerAccessDenied)return NextResponse.json({error:'Shop access denied.'},{status:403,headers});if(typeof e==='object'&&e!==null&&'digest'in e&&String(e.digest).startsWith('NEXT_REDIRECT'))return NextResponse.json({error:'Sign in required.'},{status:401,headers});console.error('Checkout request failed');return NextResponse.json({error:'Could not update checkout. Please try again.'},{status:500,headers})}
+export async function GET(request:Request){try{const p=new URL(request.url).searchParams,shopId=p.get('shop')||'',entryId=p.get('entry')||'';const {user}=await shopAccess(shopId);return NextResponse.json({checkout:await checkoutView(shopId,entryId),owner:await isShopOwner(user.id,shopId)},{headers})}catch(e){return fail(e)}}
+export async function POST(request:Request){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request origin.'},{status:403,headers});try{const data=await request.json();if(!data||typeof data!=='object'||Array.isArray(data))throw new BookingError('Invalid request.');const shopId=typeof data.shopId==='string'?data.shopId:'',entryId=typeof data.entryId==='string'?data.entryId:'';if(data.action==='receipt'){await shopAccess(shopId);return NextResponse.json(await issueCheckoutReceipt(shopId,entryId,String(data.transactionId||'')),{headers});}const access=data.action==='refund'?await shopOwnerAccess(shopId):await shopAccess(shopId);return NextResponse.json(await recordCheckout(shopId,access.user.id,data,data.action==='refund'),{headers});}catch(e){return fail(e)}}

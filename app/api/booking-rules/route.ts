@@ -1,0 +1,9 @@
+import {NextResponse} from 'next/server';
+import {sameOrigin} from '@/lib/request-origin';
+import {shopAccess,ShopAccessDenied} from '@/lib/auth';
+import {BookingError} from '@/lib/booking';
+import {rulesView,saveRules,previewClosure,saveClosure,removeClosure} from '@/lib/rules';
+export const dynamic='force-dynamic';
+function fail(e:unknown){if(e instanceof BookingError)return NextResponse.json({error:e.message},{status:400});if(e instanceof ShopAccessDenied)return NextResponse.json({error:'Shop access denied.'},{status:403});if(typeof e==='object'&&e!==null&&'digest' in e&&String(e.digest).startsWith('NEXT_REDIRECT'))return NextResponse.json({error:'Sign in required.'},{status:401});console.error('Booking rules request failed');return NextResponse.json({error:'Unable to update booking rules.'},{status:500});}
+export async function GET(request:Request){try{const shop=new URL(request.url).searchParams.get('shop')||'';await shopAccess(shop);return NextResponse.json(await rulesView(shop),{headers:{'Cache-Control':'no-store'}})}catch(e){return fail(e)}}
+export async function POST(request:Request){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request.'},{status:403});try{const d=await request.json();if(!d||typeof d!=='object'||Array.isArray(d))throw new BookingError('Invalid request.');const shop=typeof d.shopId==='string'?d.shopId:'';await shopAccess(shop);let result;switch(d.action){case 'save':result=await saveRules(shop,d);break;case 'previewClosure':result=await previewClosure(shop,d.date);break;case 'saveClosure':result=await saveClosure(shop,d);break;case 'removeClosure':result=await removeClosure(shop,d.date);break;default:throw new BookingError('Invalid action.')}return NextResponse.json(result,{headers:{'Cache-Control':'no-store'}})}catch(e){return fail(e)}}

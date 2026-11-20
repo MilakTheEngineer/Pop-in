@@ -1,0 +1,9 @@
+import {NextResponse} from 'next/server';
+import {sameOrigin} from '@/lib/request-origin';
+import {confirmationPreview,demoEmailAllowed} from '@/lib/confirmation';
+import {db} from '@/lib/db';
+import {BookingError} from '@/lib/booking';
+import {communityPublicDetails,communityPublicSlots,bookCommunity,communityImpact} from '@/lib/community';
+export const dynamic='force-dynamic';
+const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'};
+export async function POST(request:Request){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request origin.'},{status:403,headers});try{const d=await request.json();if(!d||typeof d!=='object'||Array.isArray(d))throw new BookingError('Invalid request.');let result;if(d.action==='details')result=await communityPublicDetails(d.eventId,d.token);else if(d.action==='slots')result=await communityPublicSlots(d.eventId,d.token,d.serviceId,d.barberId);else if(d.action==='impact')result=await communityImpact(d.token);else if(d.action==='book'){const id=typeof d.eventId==='string'?d.eventId:'';const event=await db.query('SELECT shop_id FROM community_events WHERE id=$1',[id]);const shopId=event.rows[0]?.shop_id||'';if(!confirmationPreview(request,shopId))return NextResponse.json({error:'Booking is unavailable until confirmation messaging is configured.'},{status:503,headers});if(!demoEmailAllowed(request,shopId,d.email))throw new BookingError('Use a fictional @example.test email for this demo.');result=await bookCommunity(d)}else throw new BookingError('Invalid request.');return NextResponse.json(result,{headers})}catch(e){if(e instanceof BookingError)return NextResponse.json({error:e.message},{status:400,headers});console.error('Community request failed');return NextResponse.json({error:'Could not load the event. Please try again.'},{status:500,headers})}}

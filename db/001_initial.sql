@@ -1,0 +1,9 @@
+CREATE TABLE shops (id text PRIMARY KEY, name text NOT NULL, location text NOT NULL, accent text NOT NULL DEFAULT '#184b3b', photo bytea, photo_type text);
+CREATE TABLE staff (id text PRIMARY KEY, email text UNIQUE NOT NULL, password_hash text NOT NULL, name text NOT NULL);
+CREATE TABLE memberships (staff_id text NOT NULL REFERENCES staff(id) ON DELETE CASCADE, shop_id text NOT NULL REFERENCES shops(id) ON DELETE CASCADE, PRIMARY KEY(staff_id,shop_id));
+CREATE TABLE sessions (id_hash text PRIMARY KEY, staff_id text NOT NULL REFERENCES staff(id) ON DELETE CASCADE, expires_at timestamptz NOT NULL);
+CREATE TABLE shop_hours (shop_id text NOT NULL REFERENCES shops(id) ON DELETE CASCADE, day int NOT NULL CHECK(day BETWEEN 0 AND 6), closed boolean NOT NULL, opens time NOT NULL, closes time NOT NULL, PRIMARY KEY(shop_id,day));
+CREATE TABLE services (id text PRIMARY KEY, shop_id text NOT NULL REFERENCES shops(id) ON DELETE CASCADE, name text NOT NULL, description text NOT NULL DEFAULT '', price_cents int NOT NULL CHECK(price_cents >= 0), duration int NOT NULL CHECK(duration > 0), UNIQUE(id,shop_id));
+CREATE TABLE barbers (id text PRIMARY KEY, shop_id text NOT NULL REFERENCES shops(id) ON DELETE CASCADE, name text NOT NULL, role text NOT NULL DEFAULT 'Barber', UNIQUE(id,shop_id));
+CREATE TABLE barber_services (shop_id text NOT NULL, barber_id text NOT NULL, service_id text NOT NULL, PRIMARY KEY(barber_id,service_id), FOREIGN KEY(barber_id,shop_id) REFERENCES barbers(id,shop_id) ON DELETE CASCADE, FOREIGN KEY(service_id,shop_id) REFERENCES services(id,shop_id) ON DELETE CASCADE);
+CREATE TABLE shifts (shop_id text NOT NULL, barber_id text NOT NULL, day int NOT NULL CHECK(day BETWEEN 0 AND 6), off boolean NOT NULL, starts time NOT NULL, ends time NOT NULL, PRIMARY KEY(barber_id,day), FOREIGN KEY(barber_id,shop_id) REFERENCES barbers(id,shop_id) ON DELETE CASCADE);

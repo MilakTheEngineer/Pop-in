@@ -1,0 +1,55 @@
+{
+  "name": "pop-in",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "next dev -H 127.0.0.1 -p 3001",
+    "build": "next build",
+    "start": "next start",
+    "db:migrate": "node --env-file=.env scripts/setup.mjs",
+    "db:seed": "node --env-file=.env scripts/setup.mjs --seed",
+    "db:local": "pglite-server --db=./.popin-data --port=56439 --host=127.0.0.1 --max-connections=10",
+    "restore:staging:local": "node --env-file=.env scripts/rehearse-staging.mjs",
+    "reminders:local": "node --env-file=.env --import tsx scripts/reminders-local.ts",
+    "waitlist:local": "node --env-file=.env --import tsx scripts/waitlist-local.ts",
+    "campaigns:local": "node --env-file=.env --import tsx scripts/campaigns-local.ts",
+    "calendar:worker": "node --env-file=.env --import tsx scripts/calendar-worker.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MilakTheEngineer/Pop-in.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/MilakTheEngineer/Pop-in/issues"
+  },
+  "homepage": "https://github.com/MilakTheEngineer/Pop-in#readme",
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "bcryptjs": "^3.0.3",
+    "lucide-react": "^1.76.0",
+    "next": "^16.4.6",
+    "pg": "^8.23.1",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "stripe": "^23.2.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.17",
+    "@electric-sql/pglite-socket": "^0.2.20",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsqr": "^1.4.0",
+    "playwright": "^1.65.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

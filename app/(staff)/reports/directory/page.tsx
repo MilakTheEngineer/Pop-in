@@ -1,0 +1,10 @@
+import Link from 'next/link';
+import {notFound} from 'next/navigation';
+import {ArrowLeft,CalendarDays} from 'lucide-react';
+import {shopOwnerAccess,ShopAccessDenied,ShopOwnerAccessDenied} from '@/lib/auth';
+import {directoryReport} from '@/lib/directory';
+import '../../commerce.css';
+export const dynamic='force-dynamic';
+const stamp=(d:Date)=>new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',dateStyle:'medium',timeStyle:'short'}).format(new Date(d));
+const money=(v:number|null)=>v===null?'Unavailable':'NZ$'+(v/100).toFixed(2);
+export default async function DirectoryReport(){const {shop}=await shopOwnerAccess().catch(e=>{if(e instanceof ShopAccessDenied||e instanceof ShopOwnerAccessDenied)notFound();throw e});const report=await directoryReport(shop.id);return <main className="commerce-page"><div className="commerce-heading"><div><div className="commerce-eyebrow">YOUR SHOP / REPORTS</div><h1>Directory referrals</h1><p>Bookings that started in the Rotorua directory.</p></div><Link className="outline" href="/reports"><ArrowLeft size={16}/> Daily close</Link></div><section className="commerce-card"><div className="commerce-card-head"><h2>Attributed bookings</h2><strong>{report.count} total</strong></div><p className="commerce-muted">Each directory selection is counted at most once, when an individual booking succeeds. Cancelled bookings remain in this history.</p>{!report.count?<div className="commerce-empty"><CalendarDays size={26}/><h3>No directory bookings yet</h3><p>Bookings made from your listing will appear here.</p></div>:<div className="commerce-table-wrap"><table><thead><tr><th>Booked via directory</th><th>Client</th><th>Service</th><th>Appointment</th><th>Agreed price (NZD)</th><th>Status</th></tr></thead><tbody>{report.bookings.map(b=><tr key={b.entry_id}><td>{stamp(b.created_at)}</td><td>{b.customer_name}</td><td>{b.service_name}</td><td>{stamp(b.starts_at)}</td><td>{money(b.price_cents_snapshot)}</td><td>{b.status.replaceAll('_',' ')}</td></tr>)}</tbody></table></div>}</section></main>}

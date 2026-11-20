@@ -1,0 +1,2 @@
+ALTER TABLE barber_booking_exceptions DROP CONSTRAINT barber_booking_exceptions_horizon_days_check;
+ALTER TABLE barber_booking_exceptions ADD CONSTRAINT barber_exception_horizon_check CHECK(horizon_days BETWEEN 0 AND 730);

@@ -1,0 +1,2 @@
+ALTER TABLE reminder_log DROP CONSTRAINT reminder_log_shop_id_subject_type_subject_id_starts_at_chan_key;
+ALTER TABLE reminder_log ADD CONSTRAINT reminder_log_subject_version_key UNIQUE(shop_id,subject_type,subject_id,starts_at);

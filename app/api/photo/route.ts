@@ -1,0 +1,3 @@
+import {shopAccess,ShopAccessDenied} from '@/lib/auth';
+import {db} from '@/lib/db';
+export async function GET(request:Request){const id=new URL(request.url).searchParams.get('shop'); if(!id) return new Response('Missing shop',{status:400});try{await shopAccess(id)}catch(e){if(e instanceof ShopAccessDenied)return new Response('Not found',{status:404});throw e}const r=await db.query('SELECT photo,photo_type FROM shops WHERE id=$1',[id]); if(!r.rows[0]?.photo) return new Response('Not found',{status:404}); return new Response(r.rows[0].photo,{headers:{'Content-Type':r.rows[0].photo_type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}})}

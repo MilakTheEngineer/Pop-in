@@ -1,0 +1,20 @@
+import {db} from './db';
+import {BookingError} from './booking';
+import type {PoolClient} from 'pg';
+
+export function depositAmount(price:number,method:string,value:number){return method==='fixed'?value:Math.round(price*value/100)}
+export async function depositSettings(shopId:string){
+ const [services,policy,merchant]=await Promise.all([
+  db.query(`SELECT s.id,s.name,s.duration,s.price_cents,coalesce(d.enabled,false) AS enabled,coalesce(d.method,'fixed') AS method,coalesce(d.value,0) AS value FROM services s LEFT JOIN service_deposits d ON d.shop_id=s.shop_id AND d.service_id=s.id WHERE s.shop_id=$1 ORDER BY s.name,s.id`,[shopId]),
+  db.query('SELECT refund_mode,terms,version FROM deposit_policies WHERE shop_id=$1',[shopId]),
+  db.query('SELECT account_id,charges_enabled,details_submitted FROM deposit_merchants WHERE shop_id=$1',[shopId])
+ ]);
+ return {services:services.rows,policy:policy.rows[0]??{refund_mode:'refund',terms:'',version:0},merchant:merchant.rows[0]?{connected:true,chargesEnabled:merchant.rows[0].charges_enabled,detailsSubmitted:merchant.rows[0].details_submitted}:{connected:false,chargesEnabled:false,detailsSubmitted:false}};
+}
+export async function saveDepositSettings(shopId:string,data:Record<string,unknown>){
+ if(!Array.isArray(data.services)||data.services.length>200||!['refund','retain'].includes(String(data.refundMode))||typeof data.terms!=='string'||data.terms.length>1000||!Number.isInteger(data.version))throw new BookingError('Please check the deposit settings.');
+ const rows=data.services as Record<string,unknown>[],ids=rows.map(r=>r?.id);
+ if(new Set(ids).size!==ids.length||rows.some(r=>typeof r.id!=='string'||typeof r.enabled!=='boolean'||!['fixed','percent'].includes(String(r.method))||!Number.isInteger(r.value)||Number(r.value)<0))throw new BookingError('Please check each service deposit.');
+ const q=await db.connect();try{await q.query('BEGIN');await q.query('SELECT id FROM shops WHERE id=$1 FOR UPDATE',[shopId]);const existing=await q.query('SELECT version FROM deposit_policies WHERE shop_id=$1 FOR UPDATE',[shopId]);if(Number(existing.rows[0]?.version||0)!==data.version)throw new BookingError('Deposit settings changed. Reload before saving.');const services=(await q.query('SELECT id,price_cents FROM services WHERE shop_id=$1',[shopId])).rows;if(services.length!==rows.length||services.some(s=>!ids.includes(s.id)))throw new BookingError('Services changed. Reload before saving.');for(const row of rows){const service=services.find(s=>s.id===row.id)!,value=Number(row.value),method=String(row.method);if(row.enabled&&(value<1||(method==='percent'&&value>100)||depositAmount(service.price_cents,method,value)<50||depositAmount(service.price_cents,method,value)>service.price_cents))throw new BookingError(`Check ${service.id?'the deposit amount':''}: it must be at least NZ$0.50 and no more than the service price.`);if(!row.enabled&&value===0){await q.query('DELETE FROM service_deposits WHERE shop_id=$1 AND service_id=$2',[shopId,row.id]);continue}if(value<1||(method==='percent'&&value>100)||value>1000000)throw new BookingError('Enter a valid deposit amount.');await q.query(`INSERT INTO service_deposits(shop_id,service_id,enabled,method,value) VALUES($1,$2,$3,$4,$5) ON CONFLICT(shop_id,service_id) DO UPDATE SET enabled=EXCLUDED.enabled,method=EXCLUDED.method,value=EXCLUDED.value`,[shopId,row.id,row.enabled,method,value]);}await q.query(`INSERT INTO deposit_policies(shop_id,refund_mode,terms,version) VALUES($1,$2,$3,1) ON CONFLICT(shop_id) DO UPDATE SET refund_mode=EXCLUDED.refund_mode,terms=EXCLUDED.terms,version=deposit_policies.version+1`,[shopId,data.refundMode,data.terms.trim()]);await q.query('COMMIT');return {ok:true};}catch(e){await q.query('ROLLBACK');throw e}finally{q.release()}
+}
+export async function requiresDeposit(shopId:string,serviceIds:string[],q:Pick<PoolClient,'query'>=db){return !!(await q.query('SELECT 1 FROM service_deposits WHERE shop_id=$1 AND enabled AND service_id=ANY($2::text[]) LIMIT 1',[shopId,serviceIds])).rowCount}

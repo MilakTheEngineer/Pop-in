@@ -1,0 +1,35 @@
+import {randomUUID} from 'node:crypto';
+import {db} from './db';
+import {BookingError} from './booking';
+
+type Candidate={shop_id:string;shop_name:string;location:string;channel:'email'|'sms';subject_type:'booking'|'visit';subject_id:string;starts_at:Date;recipient:string|null;recipient_name:string;service_name:string};
+const stamp=(date:Date)=>new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'}).format(date);
+function message(c:Candidate){return `${c.shop_name}, ${c.location}: Kia ora${c.subject_type==='booking'?' '+c.recipient_name:''}, a reminder for ${c.subject_type==='visit'?'your whānau visit':c.service_name} on ${stamp(c.starts_at)}. Contact the shop if you need to make changes.`}
+// Candidates are derived from the current booking rows, so moves and cancellations
+// never leave a separately queued, stale reminder to be delivered later.
+async function candidates(shopId:string|null,at:Date):Promise<Candidate[]>{const result=await db.query(`
+ WITH subjects AS (
+  SELECT e.shop_id,'booking'::text AS subject_type,e.id AS subject_id,e.starts_at,
+   e.customer_name AS recipient_name,e.service_name,g.email,e.customer_phone AS mobile
+  FROM schedule_entries e LEFT JOIN guest_booking_links g ON g.entry_id=e.id
+  WHERE e.kind='appointment' AND e.status='booked' AND NOT e.suppress_reminders AND NOT EXISTS(SELECT 1 FROM guest_visit_people p WHERE p.entry_id=e.id)
+  UNION ALL
+  SELECT v.shop_id,'visit',v.id,min(e.starts_at),'Whānau organiser','your whānau visit',v.email,v.organiser_phone
+  FROM guest_visits v JOIN guest_visit_people p ON p.visit_id=v.id AND p.shop_id=v.shop_id
+  JOIN schedule_entries e ON e.id=p.entry_id AND e.shop_id=p.shop_id
+  WHERE v.status='booked' GROUP BY v.id,v.shop_id,v.email,v.organiser_phone
+  HAVING count(*)>=2 AND bool_and(e.status='booked')
+ ) SELECT s.shop_id,sh.name AS shop_name,sh.location,r.channel,s.subject_type,s.subject_id,s.starts_at,s.recipient_name,s.service_name,
+ CASE WHEN r.channel='email' THEN NULLIF(trim(s.email),'') ELSE NULLIF(trim(s.mobile),'') END AS recipient
+ FROM subjects s JOIN shops sh ON sh.id=s.shop_id JOIN reminder_settings r ON r.shop_id=s.shop_id AND r.enabled
+ WHERE ($1::text IS NULL OR s.shop_id=$1) AND s.starts_at>$2 AND s.starts_at<=($2::timestamptz + r.lead_minutes * interval '1 minute')
+ ORDER BY s.starts_at,s.subject_id`,[shopId,at]);return result.rows;}
+export async function reminderSettings(shopId:string){const result=await db.query('SELECT enabled,channel,lead_minutes FROM reminder_settings WHERE shop_id=$1',[shopId]);return result.rows[0]??{enabled:false,channel:'email',lead_minutes:1440};}
+export async function saveReminderSettings(shopId:string,d:Record<string,unknown>){if(typeof d.enabled!=='boolean'||!['email','sms'].includes(String(d.channel))||![60,120,1440,2880].includes(Number(d.leadMinutes)))throw new BookingError('Choose a valid channel and reminder time.');await db.query('INSERT INTO reminder_settings(shop_id,enabled,channel,lead_minutes) VALUES($1,$2,$3,$4) ON CONFLICT(shop_id) DO UPDATE SET enabled=EXCLUDED.enabled,channel=EXCLUDED.channel,lead_minutes=EXCLUDED.lead_minutes',[shopId,d.enabled,d.channel,Number(d.leadMinutes)]);}
+export async function reminderView(shopId:string){const [settings,logs]=await Promise.all([reminderSettings(shopId),db.query('SELECT id,subject_type,starts_at,channel,recipient,recipient_name,message,status,error,created_at,updated_at FROM reminder_log WHERE shop_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',[shopId])]);const sms=await db.query("SELECT count(*)::int AS n FROM reminder_log WHERE shop_id=$1 AND channel='sms' AND status='preview' AND created_at >= date_trunc('month',now() AT TIME ZONE 'Pacific/Auckland') AT TIME ZONE 'Pacific/Auckland'",[shopId]);return {settings,logs:logs.rows,smsPreviews:sms.rows[0].n};}
+export async function runDueReminders(shopId:string|null,simulateFailure=false,at=new Date()){const due=await candidates(shopId,at);let created=0;for(const c of due){const error=!c.recipient?`No ${c.channel==='email'?'email address':'mobile number'} is available for this ${c.subject_type==='visit'?'organiser':'customer'}.`:simulateFailure?'Simulated provider failure. No message was sent.':null;const r=await db.query(`INSERT INTO reminder_log(id,shop_id,subject_type,subject_id,starts_at,channel,recipient,recipient_name,message,status,error)
+ SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11 WHERE EXISTS (SELECT 1 FROM reminder_settings s WHERE s.shop_id=$2 AND s.enabled AND s.channel=$6 AND $5::timestamptz>$12 AND $5::timestamptz<=$12::timestamptz+s.lead_minutes*interval '1 minute')
+ AND (($3='booking' AND EXISTS (SELECT 1 FROM schedule_entries e WHERE e.id=$4 AND e.shop_id=$2 AND e.kind='appointment' AND e.status='booked' AND NOT e.suppress_reminders AND e.starts_at=$5 AND NOT EXISTS (SELECT 1 FROM guest_visit_people p WHERE p.entry_id=e.id)))
+ OR ($3='visit' AND EXISTS (SELECT 1 FROM guest_visits v JOIN guest_visit_people p ON p.visit_id=v.id AND p.shop_id=v.shop_id JOIN schedule_entries e ON e.id=p.entry_id AND e.shop_id=p.shop_id WHERE v.id=$4 AND v.shop_id=$2 AND v.status='booked' GROUP BY v.id HAVING count(*)>=2 AND bool_and(e.status='booked') AND min(e.starts_at)=$5)))
+ ON CONFLICT(shop_id,subject_type,subject_id,starts_at) DO NOTHING RETURNING id`,[randomUUID(),c.shop_id,c.subject_type,c.subject_id,c.starts_at,c.channel,c.recipient,c.recipient_name,message(c),error?'failed':'preview',error,at]);created+=r.rowCount??0;}return {created};}
+export async function retryReminder(shopId:string,id:string,at=new Date()){const r=await db.query('SELECT * FROM reminder_log WHERE shop_id=$1 AND id=$2',[shopId,id]);if(!r.rowCount)throw new BookingError('Reminder not found.');const old=r.rows[0];if(old.status==='preview')return {ok:true};const due=await candidates(shopId,at);const current=due.find(c=>c.subject_type===old.subject_type&&c.subject_id===old.subject_id&&c.channel===old.channel&&c.starts_at.getTime()===old.starts_at.getTime());if(!current)throw new BookingError('This reminder is no longer due. The booking may have moved, been cancelled or the settings changed.');if(!current.recipient)throw new BookingError('This customer has no contact for the selected channel.');await db.query("UPDATE reminder_log SET status='preview',recipient=$3,message=$4,error=NULL,updated_at=now() WHERE shop_id=$1 AND id=$2 AND status='failed'",[shopId,id,current.recipient,message(current)]);return {ok:true};}

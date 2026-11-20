@@ -1,0 +1,11 @@
+import {NextResponse} from 'next/server';
+import {shopOwnerAccess,ShopAccessDenied,ShopOwnerAccessDenied} from '@/lib/auth';
+import {sameOrigin} from '@/lib/request-origin';
+import {BookingError} from '@/lib/booking';
+import {billingPortal,billingView,refreshShopBilling,startBillingCheckout} from '@/lib/shop-billing';
+export const dynamic='force-dynamic';
+const headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'};
+function fail(e:unknown){if(e instanceof BookingError)return NextResponse.json({error:e.message},{status:400,headers});if(e instanceof ShopAccessDenied||e instanceof ShopOwnerAccessDenied)return NextResponse.json({error:'Owner access required.'},{status:403,headers});if(typeof e==='object'&&e!==null&&'digest' in e&&String(e.digest).startsWith('NEXT_REDIRECT'))return NextResponse.json({error:'Sign in required.'},{status:401,headers});console.error('Shop billing request failed');return NextResponse.json({error:'Billing is temporarily unavailable. Please try again.'},{status:503,headers});}
+export async function GET(request:Request){try{const shop=new URL(request.url).searchParams.get('shop')||'';await shopOwnerAccess(shop);return NextResponse.json(await billingView(shop),{headers});}catch(e){return fail(e)}}
+export async function POST(request:Request){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request origin.'},{status:403,headers});try{const raw=await request.text();if(raw.length>4096)throw new BookingError('Request is too large.');let d:Record<string,unknown>;try{d=JSON.parse(raw)}catch{throw new BookingError('Invalid request.')}if(!d||typeof d!=='object'||Array.isArray(d))throw new BookingError('Invalid request.');const shop=typeof d.shopId==='string'?d.shopId:'',access=await shopOwnerAccess(shop);let result;if(d.action==='refresh')result=await refreshShopBilling(shop);else if(d.action==='checkout')result=await startBillingCheckout(shop,access.shop.name,d.plan);else if(d.action==='portal')result=await billingPortal(shop,'portal');else if(d.action==='payment')result=await billingPortal(shop,'payment');else if(d.action==='change')result=await billingPortal(shop,'change',d.plan);else throw new BookingError('Invalid request.');return NextResponse.json(result,{headers});}catch(e){return fail(e)}}
+

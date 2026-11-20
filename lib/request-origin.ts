@@ -1,0 +1,1 @@
+export function sameOrigin(request:Request){try{const value=request.headers.get('origin'),host=request.headers.get('host');if(!value||!host)return false;const origin=new URL(value);return origin.origin===value&&origin.host===host&&origin.protocol===new URL(request.url).protocol}catch{return false}}
