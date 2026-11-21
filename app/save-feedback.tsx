@@ -10,7 +10,7 @@ export function SaveForm({action, children, className, onReset, resetOnSuccess=f
  async function save(e:React.FormEvent<HTMLFormElement>){
   e.preventDefault();if(lock.current)return;lock.current=true;const form=e.currentTarget;const data=new FormData(form);
   setState('saving');
-  try { await action(data); if(resetOnSuccess)form.reset();setState('saved'); }
+  try { await action(data); if(resetOnSuccess)form.reset();form.dispatchEvent(new Event('popin-saved',{bubbles:true}));setState('saved'); }
   catch { setState('unknown'); }
   finally {lock.current=false}
  }

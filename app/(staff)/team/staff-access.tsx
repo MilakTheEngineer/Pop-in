@@ -1,0 +1,11 @@
+'use client';
+import {useEffect,useState} from 'react';
+type Account={id:string;name:string;email:string;owner:boolean;location_ids:string[]};
+type Location={id:string;location:string;owner:boolean};
+export function StaffAccess({shopId,locations}:{shopId:string;locations:Location[]}){
+ const [accounts,setAccounts]=useState<Account[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ async function load(){const r=await fetch('/api/time-off?shop='+encodeURIComponent(shopId),{cache:'no-store'});if(!r.ok)throw Error('Could not load staff access.');setAccounts((await r.json()).accounts)}
+ useEffect(()=>{load().catch(e=>setError(e.message))},[shopId]);
+ async function change(action:'assignStaff'|'removeStaff',account:Account,targetShopId?:string){if(busy)return;if(action==='removeStaff'&&!window.confirm(`Remove ${account.name}'s access to this location? Their bookings and profile will remain.`))return;setBusy(true);setError('');setNotice('');try{const r=await fetch('/api/team',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:crypto.randomUUID(),shopId,staffId:account.id,targetShopId,action})});const d=await r.json();if(!r.ok)throw Error(d.error||'Could not update staff access.');await load();setNotice(action==='removeStaff'?'Access removed.':'Location access added.')}catch(e){setError(e instanceof Error?e.message:'Could not update staff access.')}finally{setBusy(false)}}
+ return <section className="commerce-card team-timesheets"><h2>Staff access</h2><p className="commerce-muted">Staff accounts and barber profiles are separate. Removing access leaves bookings and profiles in place.</p>{error&&<p className="commerce-error" role="alert">{error}</p>}{notice&&<p className="commerce-notice" role="status">{notice}</p>}<div>{accounts.map(a=><article className="team-row-card" key={a.id}><div><strong>{a.name}</strong><p>{a.email}</p></div><div>{locations.filter(l=>l.owner&&l.id!==shopId).map(l=><button className="outline" disabled={busy||a.location_ids.includes(l.id)} key={l.id} onClick={()=>change('assignStaff',a,l.id)}>{a.location_ids.includes(l.id)?'Has access to':'Give access to'} {l.location}</button>)} {!a.owner&&<button className="outline" disabled={busy} onClick={()=>change('removeStaff',a)}>Remove access</button>}</div></article>)}</div></section>
+}

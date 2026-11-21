@@ -18,7 +18,7 @@ function interval(d:Record<string,unknown>){
 export async function timeOffView(shop:string,user:string,owner:boolean){
  const [barbers,accounts,link,records]=await Promise.all([
   db.query('SELECT id,name FROM barbers WHERE shop_id=$1 ORDER BY name',[shop]),
-  owner?db.query('SELECT s.id,s.name,s.email,l.barber_id FROM memberships m JOIN staff s ON s.id=m.staff_id LEFT JOIN staff_barber_links l ON l.shop_id=m.shop_id AND l.staff_id=m.staff_id WHERE m.shop_id=$1 ORDER BY s.name',[shop]):Promise.resolve({rows:[]}),
+  owner?db.query('SELECT s.id,s.name,s.email,l.barber_id,EXISTS(SELECT 1 FROM shop_owners o WHERE o.shop_id=m.shop_id AND o.staff_id=m.staff_id) AS owner,ARRAY(SELECT mm.shop_id FROM memberships mm JOIN shops target ON target.id=mm.shop_id JOIN shops source ON source.id=m.shop_id JOIN shop_owners own ON own.shop_id=target.id AND own.staff_id=$2 WHERE mm.staff_id=m.staff_id AND target.location_group_id=source.location_group_id) AS location_ids FROM memberships m JOIN staff s ON s.id=m.staff_id LEFT JOIN staff_barber_links l ON l.shop_id=m.shop_id AND l.staff_id=m.staff_id WHERE m.shop_id=$1 ORDER BY s.name',[shop,user]):Promise.resolve({rows:[]}),
   db.query('SELECT barber_id FROM staff_barber_links WHERE shop_id=$1 AND staff_id=$2',[shop,user]),
   db.query(`SELECT t.id,t.barber_id,b.name,t.starts_at,t.ends_at,t.reason,t.status,t.requested_by FROM staff_time_off t JOIN barbers b ON b.shop_id=t.shop_id AND b.id=t.barber_id WHERE t.shop_id=$1 AND ($3::boolean OR t.requested_by=$2 OR (t.requested_by IS NULL AND EXISTS (SELECT 1 FROM staff_barber_links l WHERE l.shop_id=t.shop_id AND l.barber_id=t.barber_id AND l.staff_id=$2))) ORDER BY t.created_at DESC LIMIT 200`,[shop,user,owner])
  ]);

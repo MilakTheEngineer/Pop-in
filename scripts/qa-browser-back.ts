@@ -53,7 +53,7 @@ try {
   await page.getByLabel('Service for person 2').selectOption('qa-kids');
   await page.getByRole('button',{name:'Find times'}).click();
   await page.getByLabel('Visit date').fill(date);
-  const different=page.getByRole('button',{name:/Different barbers, overlapping/});
+  const different=page.getByRole('button',{name:/At the same time, with different barbers/});
   await different.waitFor({state:'visible'});
   await page.waitForFunction(()=>[...document.querySelectorAll<HTMLButtonElement>('.visit-types button')].every(b=>!b.disabled));
   await different.click();await page.getByRole('button',{name:'9:00 am',exact:true}).click();
@@ -69,13 +69,14 @@ try {
   await page.getByLabel('Organiser’s mobile').fill('021 555 0123');
   await page.route('**/api/visit',async route=>{if(route.request().postDataJSON()?.action==='create')await route.abort('failed');else await route.continue()});
   await page.getByRole('button',{name:'Confirm visit'}).click();
-  await page.getByRole('alert').getByText('Your details are still here.',{exact:false}).waitFor();
+  await page.getByRole('alert').getByText('We couldn’t confirm whether your visit was saved.',{exact:false}).waitFor();
   assert.equal(await page.getByLabel('Organiser’s mobile').inputValue(),'021 555 0123');
+  assert.ok(await page.getByRole('button',{name:'Confirm visit'}).isDisabled());
   await page.unrouteAll({behavior:'wait'});
   await page.goBack(); await page.getByRole('heading',{name:'Choose a time together'}).waitFor();
   assert.equal(await different.getAttribute('aria-pressed'),'true');
   assert.equal(await page.getByRole('button',{name:'9:00 am',exact:true}).getAttribute('aria-pressed'),'true');
-  assert.match(await page.locator('.visit-plan').innerText(),/Different barbers, overlapping/);
+  assert.match(await page.locator('.visit-plan').innerText(),/At the same time, with different barbers/);
   await page.goForward();await page.getByRole('heading',{name:'Confirm your visit'}).waitFor();
   assert.equal(await page.getByLabel('Organiser’s email').inputValue(),email);
   assert.equal(await page.getByLabel('Organiser’s mobile').inputValue(),'021 555 0123');
