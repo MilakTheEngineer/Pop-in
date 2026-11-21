@@ -94,3 +94,15 @@
 .staff-extras-toggle:focus-visible,.staff-rail a:focus-visible{outline:2px solid #e5eedf;outline-offset:-3px}
 @media(min-width:801px){.staff-shell .panel-layer{left:88px}}
 @media(max-width:800px){.staff-body{grid-template-columns:68px minmax(0,1fr)}.staff-rail{padding:10px 4px}.staff-rail a,.staff-extras-toggle{width:60px;min-height:55px;font-size:10px}}
+/* Consistent, unobtrusive scrollbars for staff and customer pages. */
+*::-webkit-scrollbar{width:12px;height:12px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#9eafa1;background-clip:padding-box;border:3px solid transparent;border-radius:999px}
+*::-webkit-scrollbar-thumb:hover{background-color:#6e8c77}
+*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-button{display:none;width:0;height:0}
+.staff-rail,.staff-rail-scroll{scrollbar-width:auto}
+.staff-rail::-webkit-scrollbar-thumb,.staff-rail-scroll::-webkit-scrollbar-thumb{background-color:#87aa94}
+.staff-rail::-webkit-scrollbar-thumb:hover,.staff-rail-scroll::-webkit-scrollbar-thumb:hover{background-color:#c0d6c3}
+@-moz-document url-prefix(){*{scrollbar-width:thin;scrollbar-color:#9eafa1 transparent}.staff-rail,.staff-rail-scroll{scrollbar-width:thin;scrollbar-color:#87aa94 transparent}}
+@media(forced-colors:active){*{scrollbar-color:auto;scrollbar-width:auto}}
