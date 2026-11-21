@@ -14,7 +14,7 @@ export function SaveForm({action, children, className, onReset, resetOnSuccess=f
   catch { setState('unknown'); }
   finally {lock.current=false}
  }
- return <SaveContext.Provider value={state}><form onSubmit={save} className={className} onChange={()=>{if(state==='saved'||state==='unknown')setState('idle')}} onClickCapture={e=>{if((e.target as HTMLElement).closest('[data-edits-form]')&&(state==='saved'||state==='unknown'))setState('idle')}} onReset={e=>{setState('idle');onReset?.(e)}}>{children}<span role="status" aria-live="polite" className="save-feedback">{state==='saving'?'Saving…':state==='saved'?'Saved':state==='unknown'?"Couldn’t confirm the save. Check before trying again.":''}</span></form></SaveContext.Provider>;
+ return <SaveContext.Provider value={state}><form onSubmit={save} className={className} onChange={()=>{if(state==='saved'||state==='unknown')setState('idle')}} onClickCapture={e=>{if((e.target as HTMLElement).closest('[data-edits-form]')&&(state==='saved'||state==='unknown'))setState('idle')}} onReset={e=>{setState('idle');onReset?.(e)}}>{children}<span role="status" aria-live="polite" className={'save-feedback'+(state==='unknown'?'':' sr-only')}>{state==='saving'?'Saving…':state==='saved'?'Saved':state==='unknown'?"Couldn’t confirm the save. Check before trying again.":''}</span></form></SaveContext.Provider>;
 }
 
 export function SaveButton({children}:{children:ReactNode}){
