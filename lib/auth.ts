@@ -22,10 +22,10 @@ export async function staff() {
 }
 export async function shopAccess(shopId?: string) {
   const user = await staff();
-  const result = await db.query('SELECT shops.id, shops.name, shops.location, shops.accent, (shops.photo IS NOT NULL) AS has_photo FROM shops JOIN memberships ON memberships.shop_id=shops.id WHERE memberships.staff_id=$1 ORDER BY shops.name', [user.id]);
+  const result = await db.query('SELECT shops.id, shops.name, shops.location, shops.street_address, shops.accent, (shops.photo IS NOT NULL) AS has_photo FROM shops JOIN memberships ON memberships.shop_id=shops.id WHERE memberships.staff_id=$1 ORDER BY shops.name', [user.id]);
   if (!result.rowCount) throw new ShopAccessDenied('Shop access denied');
   const selected=shopId??(await cookies()).get('popin_shop')?.value;const match=selected?result.rows.find(r=>r.id===selected):null;const shop=match??(shopId===undefined?result.rows[0]:null);if(!shop)throw new ShopAccessDenied('Shop access denied');
-  return { user, shop: shop as {id:string;name:string;location:string;accent:string;has_photo:boolean}, shops: result.rows as {id:string;name:string;location:string}[] };
+  return { user, shop: shop as {id:string;name:string;location:string;street_address:string;accent:string;has_photo:boolean}, shops: result.rows as {id:string;name:string;location:string}[] };
 }
 
 export class ShopOwnerAccessDenied extends Error {}

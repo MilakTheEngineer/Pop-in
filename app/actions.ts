@@ -19,11 +19,11 @@ export async function login(f:FormData) {
 export async function logout() { const c=await cookies(); const token=c.get('popin_session')?.value; if(token) await db.query('DELETE FROM sessions WHERE id_hash=$1',[hash(token)]); c.delete('popin_session');c.delete('popin_shop'); redirect('/login'); }
 export async function switchShop(f:FormData){const id=required(str(f,'shopId'));await shopAccess(id);(await cookies()).set('popin_shop',id,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:604800});redirect('/today');}
 export async function saveShop(f:FormData) {
- const id=str(f,'shopId'); await shopAccess(id); const name=required(str(f,'name')); const location=required(str(f,'location')); const accent=str(f,'accent'); if(!/^#[0-9a-fA-F]{6}$/.test(accent)) throw new Error('Invalid colour');
+ const id=str(f,'shopId'); await shopAccess(id); const name=required(str(f,'name')); const location=required(str(f,'location')); const address=required(str(f,'streetAddress'),200); const accent=str(f,'accent'); if(!/^#[0-9a-fA-F]{6}$/.test(accent)) throw new Error('Invalid colour');
  const photo=f.get('photo');
- if(photo instanceof File && photo.size) { if(photo.size>3_000_000 || !['image/jpeg','image/png','image/webp'].includes(photo.type)) throw new Error('Photo must be a JPEG, PNG or WebP under 3 MB.'); await db.query('UPDATE shops SET name=$1,location=$2,accent=$3,photo=$4,photo_type=$5 WHERE id=$6',[name,location,accent,Buffer.from(await photo.arrayBuffer()),photo.type,id]); }
- else if(f.has('removePhoto')) await db.query('UPDATE shops SET name=$1,location=$2,accent=$3,photo=NULL,photo_type=NULL WHERE id=$4',[name,location,accent,id]);
- else await db.query('UPDATE shops SET name=$1,location=$2,accent=$3 WHERE id=$4',[name,location,accent,id]); refresh('shop');
+ if(photo instanceof File && photo.size) { if(photo.size>3_000_000 || !['image/jpeg','image/png','image/webp'].includes(photo.type)) throw new Error('Photo must be a JPEG, PNG or WebP under 3 MB.'); await db.query('UPDATE shops SET name=$1,location=$2,street_address=$3,accent=$4,photo=$5,photo_type=$6 WHERE id=$7',[name,location,address,accent,Buffer.from(await photo.arrayBuffer()),photo.type,id]); }
+ else if(f.has('removePhoto')) await db.query('UPDATE shops SET name=$1,location=$2,street_address=$3,accent=$4,photo=NULL,photo_type=NULL WHERE id=$5',[name,location,address,accent,id]);
+ else await db.query('UPDATE shops SET name=$1,location=$2,street_address=$3,accent=$4 WHERE id=$5',[name,location,address,accent,id]); refresh('shop');
 }
 export async function saveHours(f:FormData) {
  const id=str(f,'shopId'); await shopAccess(id); const values=Array.from({length:7},(_,d)=>({d,closed:f.has('closed'+d),opens:time(str(f,'opens'+d)),closes:time(str(f,'closes'+d))}));
