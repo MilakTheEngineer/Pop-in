@@ -82,3 +82,4 @@
 }
 .hosted-demo-banner{background:#fff3d4;color:#453813;border-bottom:1px solid #e4d4a6;padding:9px 16px;text-align:center;font-size:13px;line-height:1.4}
 .hosted-demo-banner strong{color:#30290f}
+.shift-shortcut{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px}.shift-shortcut small{color:var(--muted);font-size:12px}.team-open-days{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600}.team-open-days input{accent-color:var(--pine)}.team-open-days small{flex-basis:100%;padding-left:24px;color:var(--muted);font-weight:400}
