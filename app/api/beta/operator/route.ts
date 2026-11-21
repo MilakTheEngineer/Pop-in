@@ -1,0 +1,12 @@
+import {NextResponse} from 'next/server';
+import {operatorAccess} from '@/lib/operator';
+import {sameOrigin} from '@/lib/request-origin';
+import {BookingError} from '@/lib/booking';
+import {db} from '@/lib/db';
+import {approveFounding} from '@/lib/beta';
+export const dynamic='force-dynamic';
+const headers={'Cache-Control':'no-store'};
+async function access(){const a=await operatorAccess();return a.status==='allowed'?a.user:null}
+function fail(e:unknown){if(e instanceof BookingError)return NextResponse.json({error:e.message},{status:400,headers});console.error('Beta operator request failed',e);return NextResponse.json({error:'Could not update beta applications.'},{status:500,headers})}
+export async function GET(){try{if(!await access())return NextResponse.json({error:'Operator access required.'},{status:403,headers});const [applications,reports,feedback,interest]=await Promise.all([db.query("SELECT a.*,s.name,s.location,(SELECT max(f.created_at) FROM founder_feedback f WHERE f.shop_id=a.shop_id) AS last_feedback_at FROM beta_applications a JOIN shops s ON s.id=a.shop_id ORDER BY a.created_at DESC"),db.query('SELECT r.id,r.category,r.created_at,s.name,s.location FROM beta_reports r JOIN shops s ON s.id=r.shop_id ORDER BY r.created_at DESC LIMIT 100'),db.query('SELECT f.shop_id,f.category,f.note,f.created_at,s.name,s.location FROM founder_feedback f JOIN shops s ON s.id=f.shop_id ORDER BY f.created_at DESC LIMIT 200'),db.query('SELECT i.shop_id,i.created_at,s.name,s.location FROM beta_regular_interest i JOIN shops s ON s.id=i.shop_id ORDER BY i.created_at DESC LIMIT 200')]);return NextResponse.json({applications:applications.rows,reports:reports.rows,feedback:feedback.rows,interest:interest.rows},{headers})}catch(e){return fail(e)}}
+export async function POST(request:Request){if(!sameOrigin(request))return NextResponse.json({error:'Invalid request origin.'},{status:403,headers});try{const user=await access();if(!user)return NextResponse.json({error:'Operator access required.'},{status:403,headers});const d=await request.json();if(!d||typeof d.shopId!=='string')throw new BookingError('Invalid request.');if(d.action==='approve')return NextResponse.json(await approveFounding(d.shopId,user.id),{headers});throw new BookingError('Invalid action.')}catch(e){return fail(e)}}

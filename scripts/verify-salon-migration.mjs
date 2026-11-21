@@ -22,5 +22,9 @@ try{
  await assert.rejects(insert('staff-conflict','a','cut','2026-11-23T10:15:00+13:00','2026-11-23T10:45:00+13:00'),e=>e.code==='23P01');
  await db.query("UPDATE schedule_entries SET status='cancelled' WHERE id='colour-1'");
  await insert('chair-reopened','b','colour','2026-11-23T10:00:00+13:00','2026-11-23T12:30:00+13:00');
- console.log('PASS: migration, staged staff capacity, chair exclusion and cancellation release.');
+ await db.query("UPDATE salon_service_stages SET staff_mode='fixed',staff_id='b' WHERE shop_id='s' AND service_id='colour' AND position=1");
+ await assert.rejects(insert('wrong-first-stylist','a','colour','2026-11-23T14:00:00+13:00','2026-11-23T16:30:00+13:00'),e=>e.code==='P0001');
+ await insert('fixed-first-stylist','b','colour','2026-11-23T14:00:00+13:00','2026-11-23T16:30:00+13:00');
+ assert.equal((await db.query("SELECT barber_id FROM salon_appointment_stages WHERE entry_id='fixed-first-stylist' AND position=1")).rows[0].barber_id,'b');
+ console.log('PASS: migration, staged capacity, cancellation release and fixed first stylist.');
 }finally{await db.close()}

@@ -152,3 +152,5 @@ With the local rehearsal and staging app running, set `DATABASE_URL` to the stag
 
 This is a local pilot foundation, not a production-ready identity system. Before inviting real staff or deploying, replace the local-only account and invitation flow with verified identity and delivery, add password recovery, rate limiting and operational security, and use a managed PostgreSQL database with backups.
 
+
+Pilot enrolment: public shop signup is closed. Set `POPIN_ENROLMENTS_PAUSED=true` to pause even local owner setup without changing existing shops or bookings. This does not pause bookings. Approved-owner verification and launch publishing are not connected yet. The Report an issue button opens the private support queue; it is not an email address. Local test bookings do not send confirmations, including after a move or cancellation. The restore rehearsal described above is synthetic only; managed backup, retention, access and a real restore procedure must be verified before launch.

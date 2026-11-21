@@ -59,4 +59,4 @@ export async function recordCheckout(shopId:string,userId:string,data:Record<str
   const created:Payment={id,kind:action as 'payment'|'refund',purpose:paymentPurpose,amount_cents:value,tender:paymentTender as string,fee_cents:fee,original_payment_id:original,occurred_at:inserted.occurred_at,receipt_id:null};if(action==='payment'&&commerce)await finishCommerce(q,shopId,entryId,userId,compute(b,[...all,created],commerce).balance??-1);const receiptId=await ensureReceipt(q,b,created,test,[...all,created]);await q.query('COMMIT');return {receiptId,replayed:false};
  }catch(e){await q.query('ROLLBACK');throw e}finally{q.release()}
 }
-export async function checkoutReceipt(shopId:string,id:string){const r=await db.query('SELECT id,snapshot FROM checkout_receipts WHERE id=$1 AND shop_id=$2',[id,shopId]);if(!r.rowCount)throw new BookingError('Receipt not found.');return r.rows[0];}
+export async function checkoutReceipt(shopId:string,id:string){const r=await db.query('SELECT id,entry_id,snapshot FROM checkout_receipts WHERE id=$1 AND shop_id=$2',[id,shopId]);if(!r.rowCount)throw new BookingError('Receipt not found.');return r.rows[0];}
