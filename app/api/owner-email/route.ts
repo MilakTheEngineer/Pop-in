@@ -2,7 +2,7 @@ import {NextResponse} from 'next/server';
 import {shopOwnerAccess,ShopAccessDenied,ShopOwnerAccessDenied} from '@/lib/auth';
 import {sameOrigin} from '@/lib/request-origin';
 import {BookingError} from '@/lib/booking';
-import {consumeOwnerVerification,issueOwnerVerification,ownerEmailState} from '@/lib/owner-email-verification';
+import {consumeOwnerVerification,issueOwnerVerification,ownerEmailState,sendOwnerBookingEmailTest} from '@/lib/owner-email-verification';
 
 export const dynamic='force-dynamic';
 const headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'};
@@ -18,6 +18,7 @@ export async function POST(request:Request){
  try{const data=await request.json();if(!data||typeof data!=='object'||Array.isArray(data))throw new BookingError('Invalid request.');
   if(data.action==='verify')return NextResponse.json(await consumeOwnerVerification(data.token),{headers});
   if(data.action==='send'){const {user}=await shopOwnerAccess();return NextResponse.json(await issueOwnerVerification(user.id),{headers});}
+  if(data.action==='testBookingEmail'){const {user}=await shopOwnerAccess();return NextResponse.json(await sendOwnerBookingEmailTest(user.id),{headers});}
   throw new BookingError('Invalid request.');
  }catch(error){return fail(error)}
 }

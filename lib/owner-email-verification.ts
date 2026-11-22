@@ -15,7 +15,14 @@ export function verificationOrigin(){
 export async function ownerEmailState(userId:string){
  const result=await db.query('SELECT email,verified_email,email_verified_at FROM staff WHERE id=$1',[userId]);
  if(!result.rowCount)throw new BookingError('Account not found.');
- const row=result.rows[0];return {email:row.email as string,verified:!!row.email_verified_at&&row.verified_email===row.email,deliveryConfigured:!!process.env.RESEND_API_KEY?.trim()&&!!process.env.POPIN_EMAIL_FROM?.trim()&&!!verificationOrigin()};
+ const row=result.rows[0];return {email:row.email as string,verified:!!row.email_verified_at&&row.verified_email===row.email,deliveryConfigured:!!process.env.RESEND_API_KEY?.trim()&&!!process.env.POPIN_EMAIL_FROM?.trim()&&!!verificationOrigin(),testEmailAvailable:!!process.env.POPIN_BOOKING_EMAIL_ALLOWED_RECIPIENTS?.split(',').some(value=>value.trim().toLowerCase()===String(row.email).toLowerCase())};
+}
+
+export async function sendOwnerBookingEmailTest(userId:string){
+ const state=await ownerEmailState(userId);
+ if(!state.deliveryConfigured||!state.testEmailAvailable)throw new BookingError('Test email is not available for this account. Contact Varello support.');
+ await sendTransactionalEmail({to:state.email,subject:'Varello test: booking confirmed',text:'This is a test booking email with fictional details. No appointment was created.\n\nRimu Barbers\nStandard cut · Ari · Friday, 2:30 pm\n\nYour real booking confirmations will include the appointment details and private management link.',idempotencyKey:`owner-booking-test/${randomUUID()}`});
+ return {ok:true};
 }
 
 export async function issueOwnerVerification(userId:string,send:(message:TransactionalEmail)=>Promise<unknown>=sendTransactionalEmail){
