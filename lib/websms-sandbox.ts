@@ -18,9 +18,11 @@ export async function checkWebSmsSandbox(id:string,secret:string,transport:typeo
    const response=await transport('https://api.websms.co.nz/api/connexus/sms/appointment',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/x-www-form-urlencoded'},body:fields,signal:AbortSignal.timeout(12000)});
    if(!response.ok)return {name:sample.name,status:'unavailable' as const,reason:sample.unicode?'WebSMS rejected the Unicode test; Unicode may need to be enabled on the account.':'WebSMS rejected the sandbox test.'};
    const data=await response.json();
-   if(data.sandbox!==true||typeof data.sandbox_message!=='string'||typeof data.sandbox_encoding!=='string'||!Number.isInteger(data.parts)||data.parts<1)return {name:sample.name,status:'unavailable' as const,reason:`WebSMS sandbox evidence missing: sandbox=${data.sandbox===true}, message=${typeof data.sandbox_message==='string'}, encoding=${typeof data.sandbox_encoding==='string'}, parts=${Number.isInteger(data.parts)?data.parts:'missing'}.`};
-   if(data.parts>2||data.sandbox_message!==prepared.text)return {name:sample.name,status:'unavailable' as const,reason:'WebSMS changed the reminder wording or returned more than two parts. Do not send it live.'};
-   return {name:sample.name,status:'tested' as const,rendered:data.sandbox_message as string,encoding:data.sandbox_encoding as string,providerParts:data.parts as number,estimate:smsSegments(data.sandbox_message).segments,wouldCharge:typeof data.sandbox_would_charge==='number'?data.sandbox_would_charge:null};
+   const rendered=typeof data.sandbox_message==='string'?data.sandbox_message:typeof data.message==='string'?data.message:null;
+   if(data.sandbox!==true||!rendered||typeof data.sandbox_encoding!=='string'||!Number.isInteger(data.parts)||data.parts<1)return {name:sample.name,status:'unavailable' as const,reason:`WebSMS sandbox evidence missing: sandbox=${data.sandbox===true}, message=${!!rendered}, encoding=${typeof data.sandbox_encoding==='string'}, parts=${Number.isInteger(data.parts)?data.parts:'missing'}.`};
+   const cost=typeof data.sandbox_would_charge==='number'?data.sandbox_would_charge:null;
+   if(data.parts>2||rendered!==prepared.text)return {name:sample.name,status:'unavailable' as const,reason:`WebSMS changed the reminder wording or returned more than two parts. Do not send it live. Returned: ${rendered} (${data.sandbox_encoding}, ${data.parts} parts, sandbox estimate ${cost===null?'unavailable':`NZ$${cost}`}).`};
+   return {name:sample.name,status:'tested' as const,rendered,encoding:data.sandbox_encoding as string,providerParts:data.parts as number,estimate:smsSegments(rendered).segments,wouldCharge:cost};
   }catch{return {name:sample.name,status:'unavailable' as const,reason:'Could not verify the WebSMS sandbox response.'}}
  }));
 }
