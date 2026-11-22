@@ -12,7 +12,7 @@ export function startEmailWorker(){
    await enqueueDueEmailReminders();
    for(let i=0;i<20;i++){
     const result=await dispatchBookingEmail(provider);
-    if(result.status==='none'||result.status==='retry')break;
+    if(result.status==='none')break;
    }
   }catch{console.error('Booking email worker could not process the outbox.');}
   finally{running=false;}

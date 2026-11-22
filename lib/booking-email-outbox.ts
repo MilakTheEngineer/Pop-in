@@ -1,6 +1,7 @@
 import {createCipheriv,createDecipheriv,randomBytes,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {db} from './db';
+import {pilotPublishingEnabled} from './pilot';
 
 type Email={to:string;subject:string;text:string};
 type Query=Pick<PoolClient,'query'>;
@@ -9,7 +10,7 @@ export type BookingEmailProvider={send:(message:Email,key:string)=>Promise<{id:s
 export function bookingEmailTestEnabled(){try{const url=new URL(process.env.DATABASE_URL||'postgresql://invalid');return process.env.POPIN_BOOKING_EMAIL_TEST==='true'&&process.env.NODE_ENV!=='production'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)}catch{return false}}
 export function bookingEmailEnabled(){return bookingEmailTestEnabled()||process.env.POPIN_BOOKING_EMAIL_ENABLED==='true'}
 // A production pilot must explicitly name its test inboxes. An empty list sends nothing.
-function permittedRecipient(address:string){return bookingEmailTestEnabled()||Boolean(address&&process.env.POPIN_BOOKING_EMAIL_ALLOWED_RECIPIENTS?.split(',').some(value=>value.trim().toLowerCase()===address.trim().toLowerCase()))}
+async function permittedRecipient(address:string,shopId:string){return bookingEmailTestEnabled()||Boolean(address&&(process.env.POPIN_BOOKING_EMAIL_ALLOWED_RECIPIENTS?.split(',').some(value=>value.trim().toLowerCase()===address.trim().toLowerCase())||await pilotPublishingEnabled(shopId)))}
 function key(){const value=(bookingEmailTestEnabled()?process.env.POPIN_BOOKING_EMAIL_TEST_KEY:process.env.POPIN_BOOKING_EMAIL_KEY)||'',bytes=Buffer.from(value,'base64');if(bytes.length!==32||bytes.toString('base64')!==value)throw Error('A 32-byte base64 booking email encryption key is required.');return bytes}
 function encrypt(value:Email){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv),payload=Buffer.concat([cipher.update(JSON.stringify(value),'utf8'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),payload]).toString('base64')}
 function decrypt(value:string):Email{const data=Buffer.from(value,'base64'),cipher=createDecipheriv('aes-256-gcm',key(),data.subarray(0,12));cipher.setAuthTag(data.subarray(12,28));return JSON.parse(Buffer.concat([cipher.update(data.subarray(28)),cipher.final()]).toString('utf8')) as Email}
@@ -17,7 +18,10 @@ function decrypt(value:string):Email{const data=Buffer.from(value,'base64'),ciph
 export async function enqueueBookingEmail(q:Query,data:{shopId:string;subjectType:'booking'|'visit';subjectId:string;event:'confirmation'|'change'|'cancellation'|'reminder';eventKey:string;email:Email}){
  if(!bookingEmailEnabled())return;
  if(bookingEmailTestEnabled()&&!/^[^\s@]+@example\.test$/i.test(data.email.to))throw Error('Booking email tests require a fictional @example.test address.');
- if(!permittedRecipient(data.email.to))return;
+ if(!await permittedRecipient(data.email.to,data.shopId)){
+  if(!bookingEmailTestEnabled()&&data.event==='confirmation'&&process.env.POPIN_PILOT_SHOP_ID===data.shopId)throw Error('Booking email delivery is not ready.');
+  return;
+ }
  await q.query('INSERT INTO booking_email_outbox(id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(event_key) DO NOTHING',[randomUUID(),data.shopId,data.subjectType,data.subjectId,data.event,data.eventKey,encrypt(data.email)]);
 }
 
@@ -38,15 +42,15 @@ export async function enqueueBookingSnapshot(q:Query,shopId:string,subjectType:'
 export async function dispatchBookingEmail(provider:BookingEmailProvider){
  if(!bookingEmailEnabled())throw Error('Booking email delivery is disabled.');
  await db.query("UPDATE booking_email_outbox SET state='uncertain',lease_until=NULL,updated_at=now() WHERE state IN ('pending','sending') AND first_attempt_at<=now()-interval '23 hours'");
- const claimed=await db.query(`UPDATE booking_email_outbox SET state='sending',first_attempt_at=coalesce(first_attempt_at,now()),lease_until=now()+interval '2 minutes',attempts=attempts+1,updated_at=now() WHERE id=(SELECT id FROM booking_email_outbox WHERE (state='pending' OR (state='sending' AND lease_until<now())) AND (first_attempt_at IS NULL OR first_attempt_at>now()-interval '23 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext,attempts`);
+ const claimed=await db.query(`UPDATE booking_email_outbox SET state='sending',first_attempt_at=coalesce(first_attempt_at,now()),lease_until=now()+interval '2 minutes',attempts=attempts+1,updated_at=now() WHERE id=(SELECT id FROM booking_email_outbox WHERE ((state='pending' AND (lease_until IS NULL OR lease_until<=now())) OR (state='sending' AND lease_until<now())) AND (first_attempt_at IS NULL OR first_attempt_at>now()-interval '23 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext,attempts`);
  if(!claimed.rowCount)return {status:'none' as const};
  const row=claimed.rows[0];
  if(row.event==='reminder'){
   const current=row.subject_type==='booking'?await db.query("SELECT e.starts_at FROM schedule_entries e JOIN beta_reminder_consent c ON c.entry_id=e.id AND c.email WHERE e.id=$1 AND e.shop_id=$2 AND e.status='booked' AND NOT e.suppress_reminders AND e.starts_at>now()",[row.subject_id,row.shop_id]):await db.query("SELECT min(e.starts_at) AS starts_at FROM guest_visits v JOIN beta_visit_reminder_consent c ON c.visit_id=v.id AND c.email JOIN guest_visit_people p ON p.visit_id=v.id AND p.shop_id=v.shop_id JOIN schedule_entries e ON e.id=p.entry_id AND e.shop_id=p.shop_id WHERE v.id=$1 AND v.shop_id=$2 AND v.status='booked' GROUP BY v.id HAVING count(*)>=2 AND bool_and(e.status='booked' AND NOT e.suppress_reminders) AND min(e.starts_at)>now()",[row.subject_id,row.shop_id]);
   if(!current.rowCount||current.rows[0].starts_at.toISOString()!==row.event_key.slice(row.event_key.lastIndexOf('/')+1)){const state=row.attempts>1?'uncertain':'superseded';await db.query("UPDATE booking_email_outbox SET state=$2,payload_ciphertext=CASE WHEN $2='superseded' THEN NULL ELSE payload_ciphertext END,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id,state]);return {status:state as 'uncertain'|'superseded',id:row.id}}
  }
- try{const message=decrypt(row.payload_ciphertext);if(!permittedRecipient(message.to)){await db.query("UPDATE booking_email_outbox SET state='superseded',payload_ciphertext=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id]);return {status:'superseded' as const,id:row.id}}const result=await provider.send(message,row.event_key);if(!result.id)throw Error('Provider acknowledgement missing.');await db.query("UPDATE booking_email_outbox SET state='sent',provider_id=$2,payload_ciphertext=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id,result.id]);return {status:'sent' as const,id:row.id}}
- catch{await db.query("UPDATE booking_email_outbox SET state=CASE WHEN first_attempt_at<=now()-interval '23 hours' THEN 'uncertain' ELSE 'pending' END,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id]);return {status:'retry' as const,id:row.id}}
+ try{const message=decrypt(row.payload_ciphertext);if(!await permittedRecipient(message.to,row.shop_id)){await db.query("UPDATE booking_email_outbox SET state='superseded',payload_ciphertext=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id]);return {status:'superseded' as const,id:row.id}}const result=await provider.send(message,row.event_key);if(!result.id)throw Error('Provider acknowledgement missing.');await db.query("UPDATE booking_email_outbox SET state='sent',provider_id=$2,payload_ciphertext=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id,result.id]);return {status:'sent' as const,id:row.id}}
+ catch{await db.query("UPDATE booking_email_outbox SET state=CASE WHEN first_attempt_at<=now()-interval '23 hours' THEN 'uncertain' ELSE 'pending' END,lease_until=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND state='sending'",[row.id]);return {status:'retry' as const,id:row.id}}
 }
 export async function dispatchBookingEmailTest(provider:BookingEmailProvider){if(!bookingEmailTestEnabled())throw Error('Booking email dispatch is restricted to local tests.');return dispatchBookingEmail(provider)}
 
