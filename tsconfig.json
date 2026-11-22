@@ -33,7 +33,11 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-varello-dev/types/**/*.ts",
+    ".next-varello-dev/dev/types/**/*.ts",
+    ".next-qa-local/types/**/*.ts",
+    ".next-qa-local/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

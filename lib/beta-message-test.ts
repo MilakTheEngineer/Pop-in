@@ -29,4 +29,17 @@ export function prepareResendEmail(from:string,to:string,subject:string,text:str
 
 // WebSMS sandbox accepts the same appointment template but never sends or bills.
 // Live delivery is intentionally not implemented by this adapter.
-export function webSmsSandboxProvider(accessToken:string):TestReminderProvider{return {async send(m){if(m.channel!=='sms')throw new BookingError('The WebSMS sandbox only supports SMS.');const target=new URL(process.env.DATABASE_URL||'postgresql://invalid');if(process.env.NODE_ENV==='production'||!['localhost','127.0.0.1','[::1]'].includes(target.hostname))throw new BookingError('WebSMS sandbox requires a local test database.');if(!accessToken)throw new BookingError('A WebSMS sandbox token is required.');const when=new Date(m.startsAt),date=new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',day:'2-digit',month:'2-digit',year:'2-digit'}).format(when),time=new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',hour:'numeric',minute:'2-digit',hour12:true}).format(when);const fields=new URLSearchParams({to:m.to,msgCompany:m.shopName,date,time,sandbox:'true',messageClass:'transactional'});const r=await fetch('https://api.websms.co.nz/api/connexus/sms/appointment',{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/x-www-form-urlencoded'},body:fields});if(!r.ok)throw new BookingError('WebSMS sandbox rejected the test.');const result=await r.json();if(result.sandbox!==true||Number(result.parts)!==1)throw new BookingError('The sandbox template did not fit one segment.');}}}
+export async function inspectWebSmsSandbox(accessToken:string,m:Parameters<TestReminderProvider['send']>[0],transport:typeof fetch=fetch){
+ if(m.channel!=='sms')throw new BookingError('The WebSMS sandbox only supports SMS.');
+ const target=new URL(process.env.DATABASE_URL||'postgresql://invalid');
+ if(process.env.NODE_ENV==='production'||!['localhost','127.0.0.1','[::1]'].includes(target.hostname))throw new BookingError('WebSMS sandbox requires a local test database.');
+ if(!accessToken)throw new BookingError('A WebSMS sandbox token is required.');
+ const when=new Date(m.startsAt),date=new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',day:'2-digit',month:'2-digit',year:'2-digit'}).format(when),time=new Intl.DateTimeFormat('en-NZ',{timeZone:'Pacific/Auckland',hour:'numeric',minute:'2-digit',hour12:true}).format(when);
+ const fields=new URLSearchParams({to:m.to,msgCompany:m.shopName,date,time,sandbox:'true',messageClass:'transactional'});
+ const r=await transport('https://api.websms.co.nz/api/connexus/sms/appointment',{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/x-www-form-urlencoded'},body:fields});
+ if(!r.ok)throw new BookingError('WebSMS sandbox rejected the test.');
+ const result=await r.json();
+ if(result.sandbox!==true||typeof result.sandbox_message!=='string'||typeof result.sandbox_encoding!=='string'||!Number.isInteger(result.parts)||result.parts<1)throw new BookingError('WebSMS did not return sandbox message evidence.');
+ return {renderedText:result.sandbox_message as string,encoding:result.sandbox_encoding as string,parts:result.parts as number};
+}
+export function webSmsSandboxProvider(accessToken:string):TestReminderProvider{return {async send(m){const evidence=await inspectWebSmsSandbox(accessToken,m);if(evidence.parts!==1)throw new BookingError('The sandbox template did not fit one segment.');}}}

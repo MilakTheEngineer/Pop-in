@@ -1,3 +1,4 @@
+import './local-qa-guard.mjs';
 import {chromium} from 'playwright';
 import {randomUUID} from 'node:crypto';
 import {mkdir} from 'node:fs/promises';

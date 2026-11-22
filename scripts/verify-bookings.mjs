@@ -1,3 +1,4 @@
+import './local-qa-guard.mjs';
 import {chromium} from 'playwright';
 import {Temporal} from '@js-temporal/polyfill';
 import {randomUUID} from 'node:crypto';
@@ -11,6 +12,7 @@ try {
  await db.query("INSERT INTO shops(id,name,location) VALUES($1,'Z Test Shop','Rotorua')",[shop]);
  await db.query("INSERT INTO shops(id,name,location) VALUES($1,'Z Private Shop','Rotorua')",[other]);
  await db.query("INSERT INTO memberships VALUES('demo',$1)",[shop]);
+ await db.query("INSERT INTO shop_owners(staff_id,shop_id) VALUES('demo',$1)",[shop]);
  await db.query("INSERT INTO barbers(id,shop_id,name) VALUES($1,$2,'Test barber')",[barber,shop]);
  await db.query("INSERT INTO services(id,shop_id,name,duration,price_cents) VALUES($1,$2,'Test cut',30,4500)",[service,shop]);
  await db.query('INSERT INTO barber_services VALUES($1,$2,$3)',[shop,barber,service]);

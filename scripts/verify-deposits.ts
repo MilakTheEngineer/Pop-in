@@ -1,3 +1,4 @@
+import './local-qa-guard.mjs';
 import {chromium} from 'playwright';
 import {Temporal} from '@js-temporal/polyfill';
 import {randomBytes,randomUUID} from 'node:crypto';

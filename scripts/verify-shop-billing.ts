@@ -1,3 +1,4 @@
+import './local-qa-guard.mjs';
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';

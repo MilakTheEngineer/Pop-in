@@ -29,6 +29,25 @@ async function candidates(shopId:string|null,at:Date):Promise<Candidate[]>{const
  WHERE (r.channel='email' OR lg.plan_code<>'free') AND ($1::text IS NULL OR s.shop_id=$1) AND s.starts_at>$2 AND s.starts_at<=($2::timestamptz + r.lead_minutes * interval '1 minute')
  ORDER BY s.starts_at,s.subject_id`,[shopId,at]);return result.rows;}
 export async function reminderSettings(shopId:string){const result=await db.query('SELECT enabled,channel,lead_minutes FROM reminder_settings WHERE shop_id=$1',[shopId]);return result.rows[0]??{enabled:false,channel:'email',lead_minutes:1440};}
+
+// Schedule only opted-in email reminders. The outbox enforces the pilot inbox
+// allowlist and its event key deduplicates concurrent workers and restarts.
+export async function enqueueDueEmailReminders(at=new Date()){
+ const due=await db.query(`WITH subjects AS (
+  SELECT e.shop_id,'booking'::text AS subject_type,e.id AS subject_id,e.starts_at
+  FROM schedule_entries e JOIN guest_booking_links g ON g.entry_id=e.id
+  JOIN beta_reminder_consent c ON c.entry_id=e.id AND c.email
+  WHERE e.kind='appointment' AND e.status='booked' AND NOT e.suppress_reminders AND NOT e.onboarding_test AND NOT EXISTS(SELECT 1 FROM guest_visit_people p WHERE p.entry_id=e.id)
+  UNION ALL
+  SELECT v.shop_id,'visit',v.id,min(e.starts_at)
+  FROM guest_visits v JOIN beta_visit_reminder_consent c ON c.visit_id=v.id AND c.email
+  JOIN guest_visit_people p ON p.visit_id=v.id AND p.shop_id=v.shop_id JOIN schedule_entries e ON e.id=p.entry_id AND e.shop_id=p.shop_id
+  WHERE v.status='booked' GROUP BY v.id,v.shop_id HAVING count(*)>=2 AND bool_and(e.status='booked' AND NOT e.suppress_reminders AND NOT e.onboarding_test)
+ ) SELECT s.* FROM subjects s JOIN reminder_settings r ON r.shop_id=s.shop_id AND r.enabled AND r.channel='email'
+ WHERE s.starts_at>$1 AND s.starts_at<=$1::timestamptz+r.lead_minutes*interval '1 minute' ORDER BY s.starts_at`,[at]);
+ for(const row of due.rows)await enqueueBookingSnapshot(db,row.shop_id,row.subject_type,row.subject_id,'reminder',`reminder/${row.subject_type}/${row.subject_id}/${row.starts_at.toISOString()}`);
+ return {candidates:due.rowCount??0};
+}
 export async function saveReminderSettings(shopId:string,d:Record<string,unknown>){if(typeof d.enabled!=='boolean'||!['email','sms'].includes(String(d.channel))||![60,120,1440,2880].includes(Number(d.leadMinutes)))throw new BookingError('Choose a valid channel and reminder time.');if(d.channel==='sms'&&!(await planSnapshot(db,shopId)).plan.smsSegments)throw new BookingError('Free does not include SMS reminders. Choose email.');await db.query('INSERT INTO reminder_settings(shop_id,enabled,channel,lead_minutes) VALUES($1,$2,$3,$4) ON CONFLICT(shop_id) DO UPDATE SET enabled=EXCLUDED.enabled,channel=EXCLUDED.channel,lead_minutes=EXCLUDED.lead_minutes',[shopId,d.enabled,d.channel,Number(d.leadMinutes)]);}
 export async function reminderView(shopId:string){const [settings,plan,logs]=await Promise.all([reminderSettings(shopId),planSnapshot(db,shopId),db.query('SELECT id,subject_type,starts_at,channel,recipient,recipient_name,message,status,error,created_at,updated_at FROM reminder_log WHERE shop_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',[shopId])]);const sms=await db.query("SELECT count(*)::int AS n FROM reminder_log WHERE shop_id=$1 AND channel='sms' AND status='preview' AND created_at >= date_trunc('month',now() AT TIME ZONE 'Pacific/Auckland') AT TIME ZONE 'Pacific/Auckland'",[shopId]);const reserved=await db.query(`SELECT (coalesce((SELECT sum(r.segments) FROM beta_reminder_reservations r JOIN shops s ON s.id=r.shop_id WHERE s.location_group_id=$1 AND r.billing_month=date_trunc('month',now() AT TIME ZONE 'Pacific/Auckland')::date AND r.channel='sms'),0)+coalesce((SELECT sum(r.segments) FROM beta_visit_reminder_reservations r JOIN shops s ON s.id=r.shop_id WHERE s.location_group_id=$1 AND r.billing_month=date_trunc('month',now() AT TIME ZONE 'Pacific/Auckland')::date AND r.channel='sms'),0))::int AS n`,[plan.groupId]);return {settings,plan:plan.code,smsLimit:plan.plan.smsSegments,logs:logs.rows,smsPreviews:sms.rows[0].n,smsReserved:reserved.rows[0].n};}
 export async function runDueReminders(shopId:string|null,simulateFailure=false,at=new Date()){const due=await candidates(shopId,at);let created=0;for(const c of due){const error=!c.recipient?`No ${c.channel==='email'?'email address':'mobile number'} is available for this ${c.subject_type==='visit'?'organiser':'customer'}.`:simulateFailure?'Simulated provider failure. No message was sent.':null;const q=await db.connect();try{await q.query('BEGIN');const r=await q.query(`INSERT INTO reminder_log(id,shop_id,subject_type,subject_id,starts_at,channel,recipient,recipient_name,message,status,error)
