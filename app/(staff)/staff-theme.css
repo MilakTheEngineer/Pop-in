@@ -1,0 +1,70 @@
+/* Shared staff palette. Customer pages keep their shop-selected colours. */
+.staff-shell {
+  --staff-plum: #151024;
+  --staff-page: #f1ebf7;
+  --staff-card: #fff5f0;
+  --staff-rose: #a32d60;
+  --staff-coral: #ff4f91;
+  --staff-orange: #ff8b57;
+  --staff-seafoam: #66e2cf;
+  --staff-border: #d9cbdc;
+  --staff-muted: #65596d;
+  --ink: #21172b;
+  --muted: #65596d;
+  --line: #d9cbdc;
+  --paper: #fff5f0;
+  --sage: #f3e3ee;
+  background: var(--staff-page);
+  color: var(--ink);
+}
+.staff-shell .topbar,.staff-shell .staff-rail { background: var(--staff-plum); }
+.staff-shell .staff-rail a,.staff-shell .staff-extras-toggle { color: #e8d9ea; }
+.staff-shell .staff-rail a:hover,.staff-shell .staff-extras-toggle:hover,.staff-shell .staff-extras-toggle.has-active { background: #352339; color: #fff5f0; }
+.staff-shell .staff-rail a.selected {
+  color: #fff5f0;
+  background: #593049;
+  box-shadow: inset 4px 0 0 var(--staff-coral);
+}
+.staff-shell .staff-rail a.selected svg { color: #ff8bb4; }
+.staff-shell .staff-rail-scroll { scrollbar-color: #a95c82 transparent; }
+.staff-shell .staff-rail-scroll::-webkit-scrollbar-thumb { background-color: #a95c82; }
+.staff-shell .header-shop small,.staff-shell .profile-name small { color: #ded0e1; }
+.staff-shell .avatar { background: #593049; color: var(--staff-seafoam); }
+.staff-shell :is(.onboard-list,.publish-card,.onboard-extra,.today-board,.staff-queue,.timeline-section,.settings-hours-table,.settings-list,.table,.appearance-form,.waitlist-table,.commerce-card,.commerce-dialog,.checkout-card,.receipt-paper,.daily-metric,.billing-summary,.billing-table-wrap,.billing-plans,.salon-card,.integration-heading,.integration-empty,.integration-connect,.deposit-connect,.deposit-refunds,.edit-form,.booking-panel,.detail-panel) {
+  background-color: var(--staff-card);
+  border-color: var(--staff-border);
+}
+.staff-shell :is(.primary,.queue-call) {
+  background: linear-gradient(110deg,var(--staff-coral),var(--staff-orange));
+  border-color: transparent;
+  color: var(--staff-plum);
+}
+.staff-shell :is(.primary,.queue-call):hover:not(:disabled) { filter: brightness(1.05); }
+.staff-shell :is(.primary,.queue-call):disabled { background: #ddd1dc; color: #62596a; border-color: #ddd1dc; filter: none; }
+.staff-shell :is(.outline,.row-edit,.photo-upload,.photo-remove,.settings-cancel) { color: var(--staff-plum); border-color: #a58aa4; }
+.staff-shell :is(.outline,.row-edit,.photo-upload,.photo-remove,.settings-cancel):hover { background: #f4e4ed; }
+.staff-shell :is(.eyebrow,.step-links,.step-icon,.settings-tabs a.active,.calendar-title .eyebrow) { color: var(--staff-rose); }
+.staff-shell :is(.workspace-date,.guest-muted,.calendar-filter,.queue-empty,.queue-tools summary,.publish-card>label,.share-url input,.share-url button) { color: var(--staff-muted); }
+.staff-shell :is(.queue-empty svg,.queue-tools summary:hover) { color: var(--staff-rose); }
+.staff-shell :is(.share-url,.calendar-filter select,.queue-pause) { border-color: var(--staff-border); }
+.staff-shell :is(.share-url input,.share-url button,.calendar-filter select) { background: var(--staff-card); color: var(--staff-plum); }
+.staff-shell .onboard-step h2 { color: var(--staff-plum); }
+.staff-shell .settings-tabs a.active:after { background: var(--staff-coral); }
+.staff-shell .onboard-progress { color: var(--staff-muted); }
+.staff-shell .onboard-progress progress::-webkit-progress-bar { background: #e7dbe9; }
+.staff-shell .onboard-progress progress::-webkit-progress-value { background: linear-gradient(90deg,var(--staff-coral),var(--staff-orange)); }
+.staff-shell .onboard-progress progress::-moz-progress-bar { background: linear-gradient(90deg,var(--staff-coral),var(--staff-orange)); }
+.staff-shell :is(input[type=checkbox],input[type=radio]) { accent-color: #a82c61; }
+.staff-shell .toggle input:checked+span { background: #a82c61; }
+.staff-shell :is(.today-view-switch button[aria-pressed='true'],.appearance-option:has(input:checked)) { background: #f9e0eb; color: #4b1934; border-color: #b94775; }
+.staff-shell :is(.team-shift-group,.team-service,.team-shift-days,.retention-preview,.retention-stat,.integration-explanation) { background: #f6eaf3; color: #49364d; border-color: var(--staff-border); }
+.staff-shell .retention-thread.selected { background: #f9e0eb; color: #4b1934; }
+.staff-shell :is(.directory-dropzone,.directory-choose-photo) { border-color: #a58aa4; color: var(--staff-plum); background: #f9edf4; }
+.staff-shell .directory-drop-overlay { border-color: var(--staff-rose); background: #f7eaf2ef; color: var(--staff-plum); }
+.staff-shell :is(.timeline-head,.timeline-corner,.timeline-person,.settings-hours-header,.settings-list-header,.settings-team-header) { background-color: #f6edf5; border-color: var(--staff-border); color: #594760; }
+.staff-shell .timeline-track { background-color: var(--staff-card); }
+.staff-shell :is(a,button,input,select,textarea,summary,[role=button]):focus-visible { outline: 3px solid #a82c61; outline-offset: 3px; }
+.staff-shell :is(.topbar,.staff-rail) :is(a,button,select):focus-visible { outline-color: var(--staff-seafoam); outline-offset: 2px; }
+@media (forced-colors: active) {
+  .staff-shell .staff-rail a.selected { outline: 2px solid Highlight; outline-offset: -2px; }
+}
