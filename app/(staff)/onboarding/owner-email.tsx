@@ -1,0 +1,10 @@
+'use client';
+import {useEffect,useState} from 'react';
+
+type EmailState={email:string;verified:boolean;deliveryConfigured:boolean};
+export function OwnerEmail(){
+ const [data,setData]=useState<EmailState|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
+ useEffect(()=>{let active=true;fetch('/api/owner-email',{cache:'no-store'}).then(async r=>{if(!r.ok)throw Error();return r.json()}).then(d=>{if(active)setData(d)}).catch(()=>{if(active)setError('Couldn’t load email verification. Refresh to try again.')});return()=>{active=false}},[]);
+ async function send(){setBusy(true);setError('');setNotice('');try{const r=await fetch('/api/owner-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send'})}),d=await r.json();if(!r.ok)throw Error(d.error||'Could not send verification.');setNotice(d.alreadyVerified?'Your email is already verified.':'Verification email requested. Check your inbox for the private link.')}catch(e){setError(e instanceof Error?e.message:'Could not send verification.')}finally{setBusy(false)}}
+ return <section className="onboard-extra" aria-labelledby="owner-email-title"><h2 id="owner-email-title">Owner email verification</h2>{!data&&!error?<p>Loading…</p>:data?<><p>{data.email} · {data.verified?'Verified':'Not verified'}</p>{!data.verified&&(data.deliveryConfigured?<button type="button" className="outline" disabled={busy} onClick={send}>{busy?'Sending…':'Send verification link'}</button>:<p>Email verification isn’t connected yet. Contact Varello support.</p>)}</>:null}{notice&&<p role="status">{notice}</p>}{error&&<p role="alert" className="form-error">{error}</p>}</section>
+}
