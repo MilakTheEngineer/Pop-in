@@ -13,7 +13,8 @@ await database.exec('CREATE TABLE shops(id text primary key); INSERT INTO shops 
 await database.exec(await readFile('db/058_websms_test_delivery.sql','utf8'));
 const server=new PGLiteSocketServer({db:database,port:56467,host:'127.0.0.1'});await server.start();
 const {db}=await import('../lib/db');
-const {sendApprovedWebSmsTest,recordWebSmsReceipt,verifyWebSmsSignature,webSmsTestStatus}=await import('../lib/websms-test-delivery');
+const {sendApprovedWebSmsTest,recheckWebSmsTest,verifyWebSmsSignature,webSmsTestStatus}=await import('../lib/websms-test-delivery');
+const {POST:receiveWebhook}=await import('../app/api/websms-webhook/route');
 try{
  const time=String(Math.floor(Date.now()/1000)),body='{"type":"dlr"}',sig=createHmac('sha256','fictional-secret').update(`${time}.${body}`).digest('hex');
  assert.equal(verifyWebSmsSignature('fictional-secret',body,time,'v1='+sig),true);
@@ -23,12 +24,17 @@ try{
  const fake:typeof fetch=async(input,init)=>{
   if(String(input).endsWith('/auth/token'))return Response.json({access_token:'fictional'});
   sends++;const params=init?.body as URLSearchParams;assert.equal(params.get('to'),'64215550100');assert.equal(params.get('sandbox'),null);
-  await recordWebSmsReceipt('MSGfictional','DELIVRD');
-  return Response.json({message_id:'MSGfictional',parts:1,message:'Your next appointment with Rimu is on 15/12 at 2:30pm. Std SMS charges apply.'});
+  const payload=JSON.stringify({type:'dlr',messageId:'1559873',connexusMessageId:'APPTfictional',status:'DELIVRD'});
+  const ts=String(Math.floor(Date.now()/1000)),signature=createHmac('sha256','fictional-secret').update(`${ts}.${payload}`).digest('hex');
+  const receipt=await receiveWebhook(new Request('https://example.test/api/websms-webhook',{method:'POST',headers:{'x-websms-timestamp':ts,'x-websms-signature':'v1='+signature},body:payload}));assert.equal(receipt.status,200);
+  return Response.json({message_id:'1559873',parts:1,message:'Your next appointment with Rimu is on 15/12 at 2:30pm. Std SMS charges apply.'});
  };
  assert.equal((await sendApprovedWebSmsTest('test-shop',fake)).status,'accepted');
  assert.equal((await webSmsTestStatus('test-shop')).status,'delivered','receipt arriving before send response is matched');
  assert.equal((await sendApprovedWebSmsTest('test-shop',fake)).status,'already_attempted');assert.equal(sends,1);
+ await db.query("UPDATE websms_test_reminder SET status='accepted'");
+ const statusProvider:typeof fetch=async(input,init)=>String(input).endsWith('/auth/token')?Response.json({access_token:'fictional'}):Response.json({messages:[{message_id:(init?.body as URLSearchParams).get('message_id'),status:'DELIVRD'}]});
+ assert.equal((await recheckWebSmsTest('test-shop',statusProvider)).status,'delivered');assert.equal(sends,1,'status checks do not send another text');
  await db.query('DELETE FROM websms_test_reminder');await db.query('DELETE FROM websms_test_receipt');
  const lost:typeof fetch=async(input)=>{if(String(input).endsWith('/auth/token'))return Response.json({access_token:'fictional'});sends++;throw Error('lost response')};
  assert.equal((await sendApprovedWebSmsTest('test-shop',lost)).status,'uncertain');

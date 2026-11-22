@@ -17,6 +17,17 @@ export async function recordWebSmsReceipt(providerId:string,status:string){
  }catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}
 }
 export async function webSmsTestStatus(shopId:string){const r=await db.query('SELECT status,parts FROM websms_test_reminder WHERE id=$1 AND shop_id=$2',[id,shopId]);return r.rows[0]||null}
+export async function recheckWebSmsTest(shopId:string,transport:typeof fetch=fetch){
+ const row=await db.query('SELECT provider_id FROM websms_test_reminder WHERE id=$1 AND shop_id=$2',[id,shopId]);
+ const providerId=row.rows[0]?.provider_id;if(!providerId)throw new Error('No provider ID is available to check.');
+ const auth=await transport('https://api.websms.co.nz/api/connexus/auth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:process.env.WEBSMS_CLIENT_ID||'',client_secret:process.env.WEBSMS_CLIENT_SECRET||''}),signal:AbortSignal.timeout(12000)});
+ if(!auth.ok)throw new Error('WebSMS authentication failed.');const token=(await auth.json()).access_token;if(typeof token!=='string'||!token)throw new Error('WebSMS authentication failed.');
+ const response=await transport('https://api.websms.co.nz/api/connexus/sms/status/query',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({message_id:providerId}),signal:AbortSignal.timeout(12000)});
+ if(!response.ok)throw new Error('WebSMS status check failed.');const data=await response.json();
+ const match=Array.isArray(data.messages)?data.messages.find((x:{message_id:unknown})=>String(x.message_id)===providerId):null;
+ if(match&&['DELIVRD','UNDELIV'].includes(match.status))await recordWebSmsReceipt(providerId,match.status);
+ return webSmsTestStatus(shopId);
+}
 export async function sendApprovedWebSmsTest(shopId:string,transport:typeof fetch=fetch){
  if(process.env.WEBSMS_TEST_LIVE_ENABLED!=='true')throw new Error('The one-time SMS test is not enabled.');
  const recipient=process.env.WEBSMS_TEST_RECIPIENT||'',clientId=process.env.WEBSMS_CLIENT_ID||'',secret=process.env.WEBSMS_CLIENT_SECRET||'';
