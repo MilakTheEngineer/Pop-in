@@ -8,15 +8,15 @@ export async function checkWebSmsSandbox(id:string,secret:string,transport:typeo
  if(!auth.ok)throw new Error('WebSMS authentication failed.');
  const token=(await auth.json()).access_token;
  if(typeof token!=='string'||!token)throw new Error('WebSMS did not return an access token.');
- const samples=[{name:'Short reminder',shop:'Rimu',unicode:false},{name:'Long reminder with macrons',shop:'Te Whānau o Ngā Kaimahi Hair and Beauty Rotorua',unicode:true}];
+ const samples=[{name:'Short reminder',shop:'Rimu'},{name:'Long reminder with macrons',shop:'Te Whānau o Ngā Kaimahi Hair and Beauty Rotorua'}];
  return Promise.all(samples.map(async sample=>{
   const prepared=prepareWebSmsAppointment(sample.shop,new Date('2026-12-15T01:30:00Z'));
   if(!prepared.sendable)return {name:sample.name,status:'unavailable' as const,reason:`Not tested: the full shop name and time require ${prepared.segments} SMS parts.`};
   const fields=new URLSearchParams({to:'64215550100',msgCompany:prepared.shop,date:prepared.date,time:prepared.time,messageClass:'transactional',sandbox:'true'});
-  if(sample.unicode)fields.set('unicode','true');
+  if(prepared.encoding==='UCS-2')fields.set('unicode','true');
   try{
    const response=await transport('https://api.websms.co.nz/api/connexus/sms/appointment',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/x-www-form-urlencoded'},body:fields,signal:AbortSignal.timeout(12000)});
-   if(!response.ok)return {name:sample.name,status:'unavailable' as const,reason:sample.unicode?'WebSMS rejected the Unicode test; Unicode may need to be enabled on the account.':'WebSMS rejected the sandbox test.'};
+   if(!response.ok)return {name:sample.name,status:'unavailable' as const,reason:prepared.encoding==='UCS-2'?'WebSMS rejected the Unicode test; Unicode may need to be enabled on the account.':'WebSMS rejected the sandbox test.'};
    const data=await response.json();
    const rendered=typeof data.sandbox_message==='string'?data.sandbox_message:typeof data.message==='string'?data.message:null;
    if(data.sandbox!==true||!rendered||typeof data.sandbox_encoding!=='string'||!Number.isInteger(data.parts)||data.parts<1)return {name:sample.name,status:'unavailable' as const,reason:`WebSMS sandbox evidence missing: sandbox=${data.sandbox===true}, message=${!!rendered}, encoding=${typeof data.sandbox_encoding==='string'}, parts=${Number.isInteger(data.parts)?data.parts:'missing'}.`};

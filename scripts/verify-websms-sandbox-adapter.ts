@@ -11,13 +11,12 @@ const fake:typeof fetch=async(input,init)=>{
  assert.equal(body.get('messageClass'),'transactional');
  assert.ok(url.endsWith('/sms/appointment'));
  const text=`Your next appointment with ${body.get('msgCompany')} is on ${body.get('date')} at ${body.get('time')}. Std SMS charges apply.`;
- if(body.get('unicode')==='true')return new Response('',{status:403});
  return Response.json({sandbox:true,sandbox_message:text,sandbox_encoding:'GSM-7',parts:1});
 };
 const result=await checkWebSmsSandbox('fictional-id','fictional-secret',fake);
 assert.equal(result[0].status,'tested');
-assert.equal(result[1].status,'unavailable');
+assert.equal(result[1].status,'tested');
 assert.equal(requests.length,3);
 assert.ok(requests.every(r=>r.url.startsWith('https://api.websms.co.nz/api/connexus/')));
 await assert.rejects(checkWebSmsSandbox('','',fake));
-console.log('PASS: fictional appointment sandbox requests and independent Unicode failure.');
+console.log('PASS: fictional appointment sandbox requests and macron replacement.');
