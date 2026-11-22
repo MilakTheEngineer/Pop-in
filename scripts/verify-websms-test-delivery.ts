@@ -34,6 +34,11 @@ try{
  assert.equal((await sendApprovedWebSmsTest('test-shop',fake)).status,'accepted');
  assert.equal((await webSmsTestStatus('test-shop')).status,'delivered','receipt arriving before send response is matched');
  assert.equal((await sendApprovedWebSmsTest('test-shop',fake)).status,'already_attempted');assert.equal(sends,1);
+ await db.query("INSERT INTO sms_reminder_outbox(id,shop_id,subject_type,subject_id,starts_at,state,provider_id,segments) VALUES('customer-reminder','test-shop','booking','fictional-booking',now()+interval '1 hour','accepted','APPT-second',1)");
+ const both=JSON.stringify({type:'dlr',messageId:'8675309',connexusMessageId:'APPT-second',status:'DELIVRD'}),bothTime=String(Math.floor(Date.now()/1000)),bothSignature=createHmac('sha256','fictional-secret').update(`${bothTime}.${both}`).digest('hex');
+ const bothResult=await receiveWebhook(new Request('https://example.test/api/websms-webhook',{method:'POST',headers:{'x-websms-timestamp':bothTime,'x-websms-signature':'v1='+bothSignature},body:both}));assert.equal(bothResult.status,200);
+ assert.equal((await db.query("SELECT state FROM sms_reminder_outbox WHERE id='customer-reminder'")).rows[0].state,'delivered','the stored Connexus ID wins when the numeric ID differs');
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM sms_delivery_receipts WHERE provider_id='8675309'")).rows[0].n,0,'do not store an unrelated numeric ID when a stored send ID matched');
  await db.query("UPDATE websms_test_reminder SET status='accepted'");
  const statusProvider:typeof fetch=async(input,init)=>String(input).endsWith('/auth/token')?Response.json({access_token:'fictional'}):Response.json({messages:[{message_id:(init?.body as URLSearchParams).get('message_id'),status:'DELIVRD'}]});
  assert.equal((await recheckWebSmsTest('test-shop',statusProvider)).status,'delivered');assert.equal(sends,1,'status checks do not send another text');
