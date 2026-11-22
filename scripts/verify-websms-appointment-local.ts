@@ -14,6 +14,7 @@ assert.ok(long.text.includes('Te Whanau o Nga Kaimahi Hair and Beauty Rotorua')&
 assert.equal(long.encoding,'GSM-7');
 assert.equal(long.segments,1);
 assert.equal(long.sendable,true);
+assert.equal(prepareWebSmsAppointment('Ma\u0304ori',when).shop,'Maori');
 assert.equal(prepareWebSmsAppointment('Ā'.repeat(300),when).sendable,false);
 console.log(JSON.stringify({short,long},null,2));
 console.log('PASS: macrons become their base letters; reminders retain the full name and time.');
