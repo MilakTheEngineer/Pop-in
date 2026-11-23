@@ -19,10 +19,10 @@ export async function saveStaffAppearance(f:FormData){
  revalidatePath('/', 'layout');
 }
 export async function login(f:FormData) {
- const email=str(f,'email').toLowerCase(); const password=str(f,'password');const requested=str(f,'next');const next=requested==='/onboarding'?'/onboarding':requested==='/operator'?'/operator':requested==='/beta'?'/beta':requested==='/beta?kind=founding'?'/beta?kind=founding':'/today';
+ const email=str(f,'email').toLowerCase(); const password=String(f.get('password') ?? '');const requested=str(f,'next');const next=requested==='/onboarding'?'/onboarding':requested==='/operator'?'/operator':requested==='/beta'?'/beta':requested==='/beta?kind=founding'?'/beta?kind=founding':'/today';
  const r=await db.query('SELECT id,password_hash FROM staff WHERE email=$1',[email]);
- if (!r.rowCount || !(await bcrypt.compare(password,r.rows[0].password_hash))) redirect('/login?error=1'+(next==='/onboarding'?'&next=onboarding':next==='/operator'?'&next=operator':next==='/beta'?'&next=beta':next==='/beta?kind=founding'?'&next=founder':''));
- await signIn(r.rows[0].id); redirect(next);
+ if (!r.rowCount || !(await bcrypt.compare(password,r.rows[0].password_hash)) || !await signIn(r.rows[0].id,undefined,r.rows[0].password_hash)) redirect('/login?error=1'+(next==='/onboarding'?'&next=onboarding':next==='/operator'?'&next=operator':next==='/beta'?'&next=beta':next==='/beta?kind=founding'?'&next=founder':''));
+ redirect(next);
 }
 export async function logout() { const c=await cookies(); const token=c.get('popin_session')?.value; if(token) await db.query('DELETE FROM sessions WHERE id_hash=$1',[hash(token)]); c.delete('popin_session');c.delete('popin_shop'); redirect('/login'); }
 export async function switchShop(f:FormData){const id=required(str(f,'shopId'));await shopAccess(id);(await cookies()).set('popin_shop',id,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:604800});redirect('/today');}

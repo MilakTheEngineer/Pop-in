@@ -1,0 +1,32 @@
+import './local-qa-guard.mjs';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import bcrypt from 'bcryptjs';
+import {db} from '../lib/db';
+import {signIn} from '../lib/auth';
+import {createOwnerShop} from '../lib/onboarding';
+import {ownerRecoveryAvailable,requestOwnerRecovery,resetOwnerPassword} from '../lib/owner-password-recovery';
+import type {TransactionalEmail} from '../lib/transactional-email';
+const email=`recovery-${randomUUID()}@example.test`,password='original fictional password',replacement=' replacement fictional password ';
+process.env.POPIN_OWNER_RECOVERY_ENABLED='true';process.env.POPIN_PUBLIC_ORIGIN='https://recovery.example.test';process.env.RESEND_API_KEY='fictional';process.env.POPIN_EMAIL_FROM='test@example.test';
+const owner=await createOwnerShop({name:'Recovery QA',shopName:'Recovery QA',email,password,streetAddress:'1 Fictional Street',location:'Rotorua'}),messages:TransactionalEmail[]=[];
+const send=async(message:TransactionalEmail)=>{messages.push(message)};
+const token=()=>messages.at(-1)!.text.match(/#([a-f0-9]{64})/)![1];
+try{
+ await requestOwnerRecovery('unknown@example.test',send);await requestOwnerRecovery(email,send);assert.equal(messages.length,0,'unknown and unverified accounts send nothing');
+ await db.query('UPDATE staff SET verified_email=email,email_verified_at=now() WHERE id=$1',[owner.userId]);await db.query('DELETE FROM shop_owners WHERE staff_id=$1',[owner.userId]);await requestOwnerRecovery(email,send);assert.equal(messages.length,0,'verified non-owners send nothing');await db.query('INSERT INTO shop_owners(staff_id,shop_id) VALUES($1,$2)',[owner.userId,owner.shopId]);await requestOwnerRecovery(email,send);const first=token();
+ const stored=(await db.query('SELECT token_hash,expires_at,created_at FROM owner_password_recovery_tokens WHERE staff_id=$1',[owner.userId])).rows[0];assert.notEqual(stored.token_hash,first);assert.equal(stored.expires_at-stored.created_at,30*60000);
+ await requestOwnerRecovery(email,send);const second=token();await assert.rejects(resetOwnerPassword(first,replacement),/invalid or expired/);
+ await db.query("INSERT INTO sessions(id_hash,staff_id,expires_at) VALUES($1,$2,now()+interval '1 day')",[randomUUID(),owner.userId]);
+ const oldHash=(await db.query('SELECT password_hash FROM staff WHERE id=$1',[owner.userId])).rows[0].password_hash;
+ const raced=await Promise.allSettled([resetOwnerPassword(second,replacement),resetOwnerPassword(second,replacement)]);assert.equal(raced.filter(result=>result.status==='fulfilled').length,1);assert.equal(raced.filter(result=>result.status==='rejected').length,1);
+ assert.equal(await signIn(owner.userId,undefined,oldHash),false,'a stale password check cannot create a session after recovery');
+ const hash=(await db.query('SELECT password_hash FROM staff WHERE id=$1',[owner.userId])).rows[0].password_hash;assert.equal(await bcrypt.compare(password,hash),false);assert.equal(await bcrypt.compare(replacement,hash),true);assert.equal((await db.query('SELECT count(*)::int AS n FROM sessions WHERE staff_id=$1',[owner.userId])).rows[0].n,0);
+ await requestOwnerRecovery(email,send);await db.query("UPDATE owner_password_recovery_tokens SET expires_at=now()-interval '1 second' WHERE staff_id=$1 AND used_at IS NULL",[owner.userId]);await assert.rejects(resetOwnerPassword(token(),replacement),/invalid or expired/);
+ await requestOwnerRecovery(email,send);const changed=token();await db.query('UPDATE staff SET email=$2 WHERE id=$1',[owner.userId,'changed-'+email]);await assert.rejects(resetOwnerPassword(changed,replacement),/invalid or expired/);await db.query('UPDATE staff SET email=$2 WHERE id=$1',[owner.userId,email]);
+ await requestOwnerRecovery(email,async()=>{throw Error('Fake delivery failure')});assert.equal((await db.query('SELECT count(*)::int AS n FROM owner_password_recovery_tokens WHERE staff_id=$1 AND used_at IS NULL AND invalidated_at IS NULL',[owner.userId])).rows[0].n,0);
+ const count=messages.length;await requestOwnerRecovery(email,send);assert.equal(messages.length,count,'five requests per account per hour');
+ await assert.rejects(resetOwnerPassword('a'.repeat(64),'short'),/at least 8/);await assert.rejects(resetOwnerPassword('a'.repeat(64),'é'.repeat(37)),/72 UTF-8 bytes/);
+ process.env.POPIN_OWNER_RECOVERY_ENABLED='false';assert.equal(ownerRecoveryAvailable(),false);await requestOwnerRecovery(email,send);assert.equal(messages.length,count);
+ console.log('PASS: recovery is verified-owner-only, hashed, 30-minute, superseding and one-use under concurrency; expiry/email change/failure invalidation; rate limit; session revocation and old-password rejection. Fake inbox only.');
+}finally{await db.query('DELETE FROM shops WHERE id=$1',[owner.shopId]);await db.query('DELETE FROM staff WHERE id=$1',[owner.userId]);await db.end()}
