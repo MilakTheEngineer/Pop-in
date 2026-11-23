@@ -4,7 +4,7 @@ import {db} from './db';
 import {BookingError,dateBounds,todayNZ} from './booking';
 import {guestSlots} from './guest';
 import {newDirectorySecret,signDirectorySelection,verifyDirectorySelection,type DirectorySelection} from './directory-referrals';
-const eligible="p.opted_in AND s.booking_published AND s.public_slug IS NOT NULL AND lower(s.location) ~ '(^|[^a-z])rotorua([^a-z]|$)'";
+const eligible="NOT EXISTS(SELECT 1 FROM isolated_smoke f WHERE f.shop_id=s.id) AND p.opted_in AND s.booking_published AND s.public_slug IS NOT NULL AND lower(s.location) ~ '(^|[^a-z])rotorua([^a-z]|$)'";
 const text=(v:unknown,max:number)=>typeof v==='string'&&v.trim().length<=max?v.trim():'';
 function searchDate(date:string){dateBounds(date);const d=Temporal.PlainDate.from(date),today=Temporal.PlainDate.from(todayNZ());if(Temporal.PlainDate.compare(d,today)<0||Temporal.PlainDate.compare(d,today.add({days:366}))>0)throw new BookingError('Choose a date within the next year.');return date}
 function period(value:string){if(!['any','morning','afternoon','evening'].includes(value))throw new BookingError('Choose a valid time of day.');return value}

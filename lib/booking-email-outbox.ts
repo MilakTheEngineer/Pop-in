@@ -1,3 +1,4 @@
+import {smokeShop} from './isolated-smoke';
 import {createCipheriv,createDecipheriv,randomBytes,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {db} from './db';
@@ -45,7 +46,7 @@ export async function dispatchBookingEmail(provider:BookingEmailProvider){
  await db.query("UPDATE booking_email_outbox SET state='uncertain',lease_until=NULL,updated_at=now() WHERE state IN ('pending','sending') AND first_attempt_at<=now()-interval '23 hours'");
  const claimed=await db.query(`UPDATE booking_email_outbox SET state='sending',first_attempt_at=coalesce(first_attempt_at,now()),lease_until=now()+interval '2 minutes',attempts=attempts+1,updated_at=now() WHERE id=(SELECT id FROM booking_email_outbox WHERE ((state='pending' AND (lease_until IS NULL OR lease_until<=now())) OR (state='sending' AND lease_until<now())) AND (first_attempt_at IS NULL OR first_attempt_at>now()-interval '23 hours') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext,attempts`);
  if(!claimed.rowCount)return {status:'none' as const};
- const row=claimed.rows[0];
+ const row=claimed.rows[0];if(await smokeShop(row.shop_id))return {status:'superseded' as const,id:row.id};
  if(row.event==='reminder'){
   const current=row.subject_type==='booking'?await db.query("SELECT e.starts_at FROM schedule_entries e JOIN beta_reminder_consent c ON c.entry_id=e.id AND c.email WHERE e.id=$1 AND e.shop_id=$2 AND e.status='booked' AND NOT e.suppress_reminders AND e.starts_at>now()",[row.subject_id,row.shop_id]):await db.query("SELECT min(e.starts_at) AS starts_at FROM guest_visits v JOIN beta_visit_reminder_consent c ON c.visit_id=v.id AND c.email JOIN guest_visit_people p ON p.visit_id=v.id AND p.shop_id=v.shop_id JOIN schedule_entries e ON e.id=p.entry_id AND e.shop_id=p.shop_id WHERE v.id=$1 AND v.shop_id=$2 AND v.status='booked' GROUP BY v.id HAVING count(*)>=2 AND bool_and(e.status='booked' AND NOT e.suppress_reminders) AND min(e.starts_at)>now()",[row.subject_id,row.shop_id]);
   if(!current.rowCount||current.rows[0].starts_at.toISOString()!==row.event_key.slice(row.event_key.lastIndexOf('/')+1)){const state=row.attempts>1?'uncertain':'superseded';await db.query("UPDATE booking_email_outbox SET state=$2,payload_ciphertext=CASE WHEN $2='superseded' THEN NULL ELSE payload_ciphertext END,lease_until=NULL,updated_at=now() WHERE id=$1 AND state='sending'",[row.id,state]);return {status:state as 'uncertain'|'superseded',id:row.id}}

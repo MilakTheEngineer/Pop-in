@@ -1,3 +1,4 @@
+import {smokeIdentityAccess} from './isolated-smoke';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {db} from './db';
 import {hash} from './auth';
@@ -49,7 +50,7 @@ export async function consumeOwnerVerification(value:unknown){
  const c=await db.connect();try {await c.query('BEGIN');
   const token=await c.query(`SELECT t.id,t.staff_id,t.email FROM owner_email_verification_tokens t JOIN staff s ON s.id=t.staff_id AND s.email=t.email WHERE t.token_hash=$1 AND t.used_at IS NULL AND t.invalidated_at IS NULL AND t.expires_at>now() AND EXISTS(SELECT 1 FROM shop_owners o JOIN memberships m ON m.staff_id=o.staff_id AND m.shop_id=o.shop_id WHERE o.staff_id=t.staff_id) FOR UPDATE OF t,s`,[hash(value)]);
   if(!token.rowCount)throw new BookingError('This verification link is invalid or expired. Request a new one in Setup.');
-  const row=token.rows[0];await c.query('UPDATE staff SET verified_email=$2,email_verified_at=now() WHERE id=$1',[row.staff_id,row.email]);
+  const row=token.rows[0];if(!await smokeIdentityAccess(row.staff_id,c))throw new BookingError('Verification unavailable.');await c.query('UPDATE staff SET verified_email=$2,email_verified_at=now() WHERE id=$1',[row.staff_id,row.email]);
   await c.query('UPDATE owner_email_verification_tokens SET used_at=now() WHERE id=$1',[row.id]);
   await c.query('UPDATE owner_email_verification_tokens SET invalidated_at=now() WHERE staff_id=$1 AND id<>$2 AND used_at IS NULL AND invalidated_at IS NULL',[row.staff_id,row.id]);
   await c.query('COMMIT');return {ok:true};
