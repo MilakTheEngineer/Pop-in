@@ -1,9 +1,11 @@
+import {captureSmokeAccount} from './isolated-smoke';
 import {BookingError} from './booking';
 
 export type TransactionalEmail = {to:string;subject:string;text:string;idempotencyKey:string};
 
 // This adapter is server-side only. Never log requests: messages may contain private links.
 export async function sendTransactionalEmail(message:TransactionalEmail, transport:typeof fetch=fetch) {
+ if(await captureSmokeAccount(message))return {providerId:'isolated-capture'};
  const apiKey=process.env.RESEND_API_KEY?.trim(),from=process.env.POPIN_EMAIL_FROM?.trim();
  if(!apiKey||!from)throw new BookingError('Email delivery is not configured. Contact Varello support.');
  if(!message.to||!message.subject||!message.text||!message.idempotencyKey)throw new BookingError('Email details are incomplete.');

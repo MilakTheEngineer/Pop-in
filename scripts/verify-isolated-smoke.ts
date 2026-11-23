@@ -1,0 +1,33 @@
+import './local-qa-guard.mjs';
+import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+import {db} from '../lib/db';
+import {smokeConfig,smokeSecretValid} from '../lib/smoke-config';
+import {smokeAccess,captureSmokeAccount,decryptSmoke} from '../lib/isolated-smoke';
+import {sendTransactionalEmail} from '../lib/transactional-email';
+const shop='smoke-'+randomBytes(12).toString('hex'),owner=shop+'-owner',operator=shop+'-operator';
+const cfg={shopId:shop,secret:randomBytes(32).toString('hex'),expires:Date.now()+3600000,emails:['owner','staff','customer','operator'].map(role=>`${role}-${shop}@example.test`)};
+try{
+ delete process.env.POPIN_ISOLATED_SMOKE;assert.equal(smokeConfig(),null);assert.equal(smokeSecretValid(cfg.secret),false);
+ process.env.POPIN_ISOLATED_SMOKE=JSON.stringify(cfg);assert.equal(smokeSecretValid(cfg.secret),true);assert.equal(smokeSecretValid('0'.repeat(64)),false);
+ process.env.POPIN_ISOLATED_SMOKE=JSON.stringify({...cfg,expires:Date.now()-1});assert.equal(smokeSecretValid(cfg.secret),false);process.env.POPIN_ISOLATED_SMOKE=JSON.stringify(cfg);
+ await db.query("INSERT INTO staff(id,email,password_hash,name) VALUES($1,$2,'unused','Fictional'),($3,$4,'unused','Fictional operator')",[owner,cfg.emails[0],operator,cfg.emails[3]]);
+ await db.query("INSERT INTO shops(id,name,location,public_slug,booking_published) VALUES($1,'Fictional fixture','Rotorua',$1,true)",[shop]);
+ await db.query('INSERT INTO isolated_smoke(shop_id,owner_id,operator_id,emails,expires_at) VALUES($1,$2,$3,$4,$5)',[shop,owner,operator,cfg.emails,new Date(cfg.expires)]);
+ assert.equal(await smokeAccess(shop),false,'no request capability means no fixture access');assert.equal(await smokeAccess('rimu'),true,'ordinary access unchanged');
+ await db.query("INSERT INTO booking_email_outbox(id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext) VALUES($1,$2,'booking','fake','confirmation',$1,'encrypted-test')",[shop,shop]);
+ await db.query("INSERT INTO sms_reminder_outbox(id,shop_id,subject_type,subject_id,starts_at) VALUES($1,$2,'booking','fake',now())",[shop,shop]);
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM booking_email_outbox WHERE shop_id=$1',[shop])).rows[0].n,0);assert.equal((await db.query('SELECT count(*)::int AS n FROM sms_reminder_outbox WHERE shop_id=$1',[shop])).rows[0].n,0);
+ await db.query("INSERT INTO booking_email_outbox(id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext) VALUES($1,'rimu','booking','fake','confirmation',$1,'encrypted-test')",[shop+'ordinary']);assert.equal((await db.query('SELECT count(*)::int AS n FROM booking_email_outbox WHERE id=$1',[shop+'ordinary'])).rows[0].n,1);
+ await assert.rejects(()=>db.query("INSERT INTO calendar_integrations(id,shop_id,barber_id,provider,account_email) VALUES($1,$1,'none','google','fictional@example.test')",[shop]),/External integrations/);
+ await assert.rejects(()=>db.query("INSERT INTO deposit_merchants(shop_id,account_id) VALUES($1,$1)",[shop]),/External integrations/);
+ const message={to:cfg.emails[0],subject:'Fictional verification',text:'Private test payload',idempotencyKey:shop+'/account'};let calls=0;const fake=async()=>{calls++;return Response.json({id:'fake-provider'})};
+ process.env.RESEND_API_KEY='fake';process.env.POPIN_EMAIL_FROM='fake@example.test';await sendTransactionalEmail(message,fake as typeof fetch);assert.equal(calls,0);
+ const capture=(await db.query("SELECT payload_ciphertext FROM isolated_smoke_capture WHERE event_key=$1",[message.idempotencyKey])).rows[0];assert.equal(capture.payload_ciphertext.includes(message.text),false);assert.deepEqual(decryptSmoke(capture.payload_ciphertext,'account'),message);
+ await sendTransactionalEmail({...message,to:'ordinary@example.test'},fake as typeof fetch);assert.equal(calls,1);
+ await db.query('UPDATE isolated_smoke SET closed_at=now() WHERE shop_id=$1',[shop]);delete process.env.POPIN_ISOLATED_SMOKE;await sendTransactionalEmail(message,fake as typeof fetch);assert.equal(calls,1,'quarantine survives closure and config removal');
+ assert.equal(await captureSmokeAccount(message),true);assert.equal(await smokeAccess(shop),false);
+ console.log('PASS: default-off/invalid/expired capability; private fixture denies without capability; ordinary shop unaffected; DB blocks fixture email/SMS queues and payment/calendar connections; encrypted account capture makes no provider call; ordinary mock delivery unaffected; closure/config removal remain no-send.');
+}finally{
+ await db.query('DELETE FROM booking_email_outbox WHERE id=$1',[shop+'ordinary']);await db.query('DELETE FROM isolated_smoke_capture WHERE shop_id=$1',[shop]);await db.query('DELETE FROM isolated_smoke WHERE shop_id=$1',[shop]);await db.query('DELETE FROM shops WHERE id=$1',[shop]);await db.query('DELETE FROM staff WHERE id=ANY($1::text[])',[[owner,operator]]);await db.end();
+}

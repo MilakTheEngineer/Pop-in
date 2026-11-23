@@ -1,3 +1,4 @@
+import {smokeIdentityAccess} from './isolated-smoke';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { createHash, randomBytes } from 'crypto';
@@ -5,6 +6,7 @@ import { db } from './db';
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export class ShopAccessDenied extends Error {}
 export async function signIn(staffId: string, shopId?:string, expectedPasswordHash?:string) {
+  if(!await smokeIdentityAccess(staffId))return false;
   const token = randomBytes(32).toString('hex');
   const connection=await db.connect();
   try {
@@ -24,6 +26,7 @@ export async function currentStaff() {
   const token = (await cookies()).get('popin_session')?.value;
   if (!token) return null;
   const result = await db.query('SELECT staff.id, staff.name FROM sessions JOIN staff ON staff.id=sessions.staff_id WHERE sessions.id_hash=$1 AND sessions.expires_at > now()', [hash(token)]);
+  if(result.rowCount&&!await smokeIdentityAccess(result.rows[0].id))return null;
   return result.rowCount ? result.rows[0] as {id:string;name:string} : null;
 }
 export async function staff() {
