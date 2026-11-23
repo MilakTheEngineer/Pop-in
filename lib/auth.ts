@@ -4,10 +4,21 @@ import { createHash, randomBytes } from 'crypto';
 import { db } from './db';
 export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export class ShopAccessDenied extends Error {}
-export async function signIn(staffId: string, shopId?:string) {
+export async function signIn(staffId: string, shopId?:string, expectedPasswordHash?:string) {
   const token = randomBytes(32).toString('hex');
-  await db.query("INSERT INTO sessions(id_hash,staff_id,expires_at) VALUES($1,$2,now()+interval '7 days')", [hash(token), staffId]);
+  const connection=await db.connect();
+  try {
+    await connection.query('BEGIN');
+    // Serialize session creation with password recovery. A password checked before
+    // a concurrent reset must not create a new session after that reset commits.
+    const account=await connection.query('SELECT id FROM staff WHERE id=$1 AND ($2::text IS NULL OR password_hash=$2) FOR UPDATE',[staffId,expectedPasswordHash??null]);
+    if(!account.rowCount){await connection.query('COMMIT');return false}
+    await connection.query("INSERT INTO sessions(id_hash,staff_id,expires_at) VALUES($1,$2,now()+interval '7 days')", [hash(token), staffId]);
+    await connection.query('COMMIT');
+  } catch(error){await connection.query('ROLLBACK');throw error} finally{connection.release()}
+
   const c=await cookies();c.set('popin_session', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 604800 });c.delete('popin_shop');if(shopId)c.set('popin_shop',shopId,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/',maxAge:604800});
+  return true;
 }
 export async function currentStaff() {
   const token = (await cookies()).get('popin_session')?.value;
