@@ -19,7 +19,7 @@ export async function saveStaffAppearance(f:FormData){
  revalidatePath('/', 'layout');
 }
 export async function login(f:FormData) {
- const email=str(f,'email').toLowerCase(); const password=str(f,'password');const requested=str(f,'next');const next=requested==='/onboarding'?'/onboarding':requested==='/operator'?'/operator':requested==='/beta'?'/beta':requested==='/beta?kind=founding'?'/beta?kind=founding':'/today';
+ const email=str(f,'email').toLowerCase(); const password=String(f.get('password') ?? '');const requested=str(f,'next');const next=requested==='/onboarding'?'/onboarding':requested==='/operator'?'/operator':requested==='/beta'?'/beta':requested==='/beta?kind=founding'?'/beta?kind=founding':'/today';
  const r=await db.query('SELECT id,password_hash FROM staff WHERE email=$1',[email]);
  if (!r.rowCount || !(await bcrypt.compare(password,r.rows[0].password_hash))) redirect('/login?error=1'+(next==='/onboarding'?'&next=onboarding':next==='/operator'?'&next=operator':next==='/beta'?'&next=beta':next==='/beta?kind=founding'?'&next=founder':''));
  await signIn(r.rows[0].id); redirect(next);
