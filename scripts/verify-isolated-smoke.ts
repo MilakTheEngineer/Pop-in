@@ -25,9 +25,18 @@ try{
  process.env.RESEND_API_KEY='fake';process.env.POPIN_EMAIL_FROM='fake@example.test';await sendTransactionalEmail(message,fake as typeof fetch);assert.equal(calls,0);
  const capture=(await db.query("SELECT payload_ciphertext FROM isolated_smoke_capture WHERE event_key=$1",[message.idempotencyKey])).rows[0];assert.equal(capture.payload_ciphertext.includes(message.text),false);assert.deepEqual(decryptSmoke(capture.payload_ciphertext,'account'),message);
  await sendTransactionalEmail({...message,to:'ordinary@example.test'},fake as typeof fetch);assert.equal(calls,1);
- await db.query('UPDATE isolated_smoke SET closed_at=now() WHERE shop_id=$1',[shop]);delete process.env.POPIN_ISOLATED_SMOKE;await sendTransactionalEmail(message,fake as typeof fetch);assert.equal(calls,1,'quarantine survives closure and config removal');
+ await db.query("INSERT INTO shops(id,name,location,public_slug) VALUES($1,'Fresh fixture','Rotorua',$1)",[shop+'-next']);
+ await assert.rejects(()=>db.query('INSERT INTO isolated_smoke(shop_id,owner_id,operator_id,emails,expires_at) VALUES($1,$2,$3,$4,$5)',[shop+'-next',owner,operator,['fresh@example.test'],new Date(cfg.expires)]),/isolated_smoke_one_active/);
+ await db.query('UPDATE isolated_smoke SET closed_at=now() WHERE shop_id=$1',[shop]);
+ await db.query('INSERT INTO isolated_smoke(shop_id,owner_id,operator_id,emails,expires_at) VALUES($1,$2,$3,$4,$5)',[shop+'-next',owner,operator,['fresh@example.test'],new Date(cfg.expires)]);
+ process.env.POPIN_ISOLATED_SMOKE=JSON.stringify({...cfg,shopId:shop+'-next'});
+ await sendTransactionalEmail(message,fake as typeof fetch);assert.equal(calls,1,'historical identities remain suppressed during rotation');
+ await db.query("INSERT INTO booking_email_outbox(id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext) VALUES($1,$2,'booking','fake','confirmation',$1,'encrypted-test')",[shop+'-closed',shop]);
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM booking_email_outbox WHERE shop_id=$1',[shop])).rows[0].n,0,'closed historical outbox remains quarantined');
+delete process.env.POPIN_ISOLATED_SMOKE;await sendTransactionalEmail(message,fake as typeof fetch);assert.equal(calls,1,'quarantine survives closure and config removal');
  assert.equal(await captureSmokeAccount(message),true);assert.equal(await smokeAccess(shop),false);
  console.log('PASS: default-off/invalid/expired capability; private fixture denies without capability; ordinary shop unaffected; DB blocks fixture email/SMS queues and payment/calendar connections; encrypted account capture makes no provider call; ordinary mock delivery unaffected; closure/config removal remain no-send.');
 }finally{
+ await db.query('DELETE FROM isolated_smoke WHERE shop_id=$1',[shop+'-next']);await db.query('DELETE FROM shops WHERE id=$1',[shop+'-next']);
  await db.query('DELETE FROM booking_email_outbox WHERE id=$1',[shop+'ordinary']);await db.query('DELETE FROM isolated_smoke_capture WHERE shop_id=$1',[shop]);await db.query('DELETE FROM isolated_smoke WHERE shop_id=$1',[shop]);await db.query('DELETE FROM shops WHERE id=$1',[shop]);await db.query('DELETE FROM staff WHERE id=ANY($1::text[])',[[owner,operator]]);await db.end();
 }
