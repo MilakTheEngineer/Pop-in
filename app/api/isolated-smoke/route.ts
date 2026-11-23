@@ -31,6 +31,7 @@ export async function POST(request:Request){
     await q.query('DELETE FROM barber_services WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM shifts WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM barbers WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM services WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM shop_hours WHERE shop_id=$1',[cfg.shopId]);
     await q.query('UPDATE staff SET verified_email=NULL,email_verified_at=NULL WHERE id=$1',[fixture.owner_id]);
     await q.query('INSERT INTO memberships(staff_id,shop_id) VALUES($1,$2),($3,$2)',[fixture.owner_id,cfg.shopId,fixture.operator_id]);
+    await q.query('INSERT INTO shop_owners(staff_id,shop_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[fixture.owner_id,cfg.shopId]);
     await q.query("UPDATE location_groups SET plan_code='pro' WHERE id=(SELECT location_group_id FROM shops WHERE id=$1)",[cfg.shopId]);
     await q.query('UPDATE isolated_smoke SET closed_at=NULL,expires_at=$2 WHERE shop_id=$1',[cfg.shopId,new Date(cfg.expires)]);await q.query('COMMIT');
     await signIn(fixture.owner_id,cfg.shopId);return reply({ok:true,shopId:cfg.shopId,resumed:true});
