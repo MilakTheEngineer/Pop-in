@@ -20,28 +20,12 @@ export async function POST(request:Request){
   }
   if(!await smokeCapability())return reply({error:'Unavailable'},404);
   let fixture=await smokeShop(cfg.shopId);
-  if(d.action==='initialize'&&fixture?.closed_at){
-   // Resume only this exact quarantined fixture after a failed pre-booking setup.
-   // Both original account passwords are required; no additional shop or identity.
-   const q=await db.connect();try{await q.query('BEGIN');await q.query('SELECT pg_advisory_xact_lock(625062)');
-    const locked=(await q.query('SELECT * FROM isolated_smoke WHERE shop_id=$1 AND closed_at IS NOT NULL FOR UPDATE',[cfg.shopId])).rows[0];
-    const accounts=(await q.query('SELECT id,password_hash FROM staff WHERE id=ANY($1::text[])',[[fixture.owner_id,fixture.operator_id]])).rows;
-    if(!locked||typeof d.ownerPassword!=='string'||typeof d.operatorPassword!=='string'||!await bcrypt.compare(d.ownerPassword,accounts.find(a=>a.id===fixture.owner_id)?.password_hash||'')||!await bcrypt.compare(d.operatorPassword,accounts.find(a=>a.id===fixture.operator_id)?.password_hash||'')||(await q.query('SELECT 1 FROM schedule_entries WHERE shop_id=$1 LIMIT 1',[cfg.shopId])).rowCount)throw Error('Resume unavailable');
-    await q.query('DELETE FROM staff_barber_links WHERE shop_id=$1',[cfg.shopId]);
-    await q.query('DELETE FROM barber_services WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM shifts WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM barbers WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM services WHERE shop_id=$1',[cfg.shopId]);await q.query('DELETE FROM shop_hours WHERE shop_id=$1',[cfg.shopId]);
-    await q.query('UPDATE staff SET verified_email=NULL,email_verified_at=NULL WHERE id=$1',[fixture.owner_id]);
-    await q.query('INSERT INTO memberships(staff_id,shop_id) VALUES($1,$2),($3,$2)',[fixture.owner_id,cfg.shopId,fixture.operator_id]);
-    await q.query('INSERT INTO shop_owners(staff_id,shop_id) VALUES($1,$2) ON CONFLICT DO NOTHING',[fixture.owner_id,cfg.shopId]);
-    await q.query("UPDATE location_groups SET plan_code='pro' WHERE id=(SELECT location_group_id FROM shops WHERE id=$1)",[cfg.shopId]);
-    await q.query('UPDATE isolated_smoke SET closed_at=NULL,expires_at=$2 WHERE shop_id=$1',[cfg.shopId,new Date(cfg.expires)]);await q.query('COMMIT');
-    await signIn(fixture.owner_id,cfg.shopId);return reply({ok:true,shopId:cfg.shopId,resumed:true});
-   }catch{await q.query('ROLLBACK');return reply({error:'Resume unavailable'},400)}finally{q.release()}
-  }
   if(d.action==='initialize'){
    if(fixture||cfg.expires-Date.now()>7200000||typeof d.ownerPassword!=='string'||typeof d.operatorPassword!=='string'||[d.ownerPassword,d.operatorPassword].some(p=>p.length<16||Buffer.byteLength(p)>72))return reply({error:'Initialization unavailable'},400);
    const q=await db.connect();try{
     await q.query('BEGIN');await q.query("SELECT pg_advisory_xact_lock(625062)");
-    if((await q.query('SELECT 1 FROM isolated_smoke LIMIT 1')).rowCount)throw Error('Only one fixture is permitted');
+    if((await q.query('SELECT 1 FROM isolated_smoke WHERE closed_at IS NULL LIMIT 1')).rowCount)throw Error('Only one active fixture is permitted');
+    if((await q.query('SELECT 1 FROM isolated_smoke WHERE emails && $1::text[] LIMIT 1',[cfg.emails])).rowCount)throw Error('Historical identities cannot be reused');
     const ownerId=cfg.shopId+'-owner',operatorId=cfg.shopId+'-operator';
     await q.query('INSERT INTO staff(id,email,password_hash,name) VALUES($1,$2,$3,$4),($5,$6,$7,$8)',[ownerId,cfg.emails.find(e=>e.startsWith('owner-')),await bcrypt.hash(d.ownerPassword,12),'Isolated test owner',operatorId,cfg.emails.find(e=>e.startsWith('operator-')),await bcrypt.hash(d.operatorPassword,12),'Isolated test operator']);
     await q.query("INSERT INTO shops(id,name,location,street_address,public_slug,booking_published) VALUES($1,'Isolated Varello smoke','Rotorua','Fictional test address',$1,false)",[cfg.shopId]);
