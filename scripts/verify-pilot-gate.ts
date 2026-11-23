@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {db} from '../lib/db';
 import {pilotInvitesEnabled,pilotPublishingEnabled} from '../lib/pilot';
+import {approveShopLaunch} from '../lib/shop-launch';
 import {enqueueBookingEmail} from '../lib/booking-email-outbox';
 
 const id=randomUUID();
@@ -19,8 +20,20 @@ try {
  delete process.env.POPIN_PILOT_RESTORE_VERIFIED;
  await db.query("UPDATE staff SET email_verified_at=NULL,verified_email=NULL WHERE id='demo'");
  assert.equal(await pilotInvitesEnabled('rimu','demo'),false);
+ await assert.rejects(()=>approveShopLaunch('rimu','demo'),/verified owner/);
  await db.query("UPDATE staff SET email_verified_at=now(),verified_email=email WHERE id='demo'");
+ assert.equal(await pilotInvitesEnabled('rimu','demo'),false,'legacy pin alone no longer grants approval');
+ process.env.POPIN_BOOKING_EMAIL_ALLOWED_RECIPIENTS='customer@example.test';
+ process.env.POPIN_PILOT_RESTORE_VERIFIED='true';
+ await enqueueBookingEmail(db,{shopId:'rimu',subjectType:'booking',subjectId:id,event:'confirmation',eventKey:'private-'+id,email:{to:'customer@example.test',subject:'Private draft',text:'Must not send'}});
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM booking_email_outbox WHERE event_key=$1',['private-'+id])).rows[0].n,0,'recipient allowlist cannot authorize a private draft');
+ delete process.env.POPIN_PILOT_RESTORE_VERIFIED;
+ await approveShopLaunch('rimu','demo');
+ await approveShopLaunch('rimu','demo');
  assert.equal(await pilotInvitesEnabled('rimu','demo'),true);
+ process.env.POPIN_PILOT_SHOP_ID='other-shop';
+ process.env.POPIN_ENROLMENTS_PAUSED='true';
+ assert.equal(await pilotInvitesEnabled('rimu','demo'),true,'pin switching and intake pause preserve approval');
  assert.equal(await pilotInvitesEnabled('other-shop','demo'),false);
  assert.equal(await pilotPublishingEnabled('rimu','demo'),false);
  process.env.POPIN_PILOT_RESTORE_VERIFIED='true';
@@ -31,9 +44,10 @@ try {
  assert.equal((await db.query('SELECT count(*)::int AS n FROM booking_email_outbox WHERE event_key=$1',[id])).rows[0].n,1);
  delete process.env.POPIN_PILOT_RESTORE_VERIFIED;
  await assert.rejects(()=>enqueueBookingEmail(db,{shopId:'rimu',subjectType:'booking',subjectId:id,event:'confirmation',eventKey:'denied-'+id,email}));
- console.log('PASS: verified owner, single shop, restore and booking-email gates. No provider used.');
+ console.log('PASS: verified owner, durable shop approval, pin independence, restore and booking-email gates. No provider used.');
 } finally {
  await db.query('DELETE FROM booking_email_outbox WHERE event_key=$1',[id]);
  await db.query("UPDATE staff SET email_verified_at=$1,verified_email=$2 WHERE id='demo'",[old.email_verified_at,old.verified_email]);
+ await db.query("DELETE FROM shop_launch_approvals WHERE shop_id='rimu'");
  await db.end();
 }
