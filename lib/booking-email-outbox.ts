@@ -10,7 +10,7 @@ export type BookingEmailProvider={send:(message:Email,key:string)=>Promise<{id:s
 
 export function bookingEmailTestEnabled(){try{const url=new URL(process.env.DATABASE_URL||'postgresql://invalid');return process.env.POPIN_BOOKING_EMAIL_TEST==='true'&&process.env.NODE_ENV!=='production'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)}catch{return false}}
 export function bookingEmailEnabled(){return bookingEmailTestEnabled()||process.env.POPIN_BOOKING_EMAIL_ENABLED==='true'}
-// Production customer messages require durable shop approval and delivery readiness.
+// Production customer messages require a verified owner and delivery readiness.
 // A recipient allowlist alone must never authorize mail for a private draft.
 async function permittedRecipient(address:string,shopId:string,q:Query=db){return bookingEmailTestEnabled()||Boolean(address&&await pilotPublishingEnabled(shopId,undefined,q))}
 function key(){const value=(bookingEmailTestEnabled()?process.env.POPIN_BOOKING_EMAIL_TEST_KEY:process.env.POPIN_BOOKING_EMAIL_KEY)||'',bytes=Buffer.from(value,'base64');if(bytes.length!==32||bytes.toString('base64')!==value)throw Error('A 32-byte base64 booking email encryption key is required.');return bytes}
@@ -21,7 +21,7 @@ export async function enqueueBookingEmail(q:Query,data:{shopId:string;subjectTyp
  if(!bookingEmailEnabled())return;
  if(bookingEmailTestEnabled()&&!/^[^\s@]+@example\.test$/i.test(data.email.to))throw Error('Booking email tests require a fictional @example.test address.');
  if(!await permittedRecipient(data.email.to,data.shopId,q)){
-  if(!bookingEmailTestEnabled()&&data.event==='confirmation'&&(await q.query('SELECT 1 FROM shop_launch_approvals WHERE shop_id=$1',[data.shopId])).rowCount)throw Error('Booking email delivery is not ready.');
+  if(!bookingEmailTestEnabled()&&data.event==='confirmation')throw Error('Booking email delivery is not ready.');
   return;
  }
  await q.query('INSERT INTO booking_email_outbox(id,shop_id,subject_type,subject_id,event,event_key,payload_ciphertext) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(event_key) DO NOTHING',[randomUUID(),data.shopId,data.subjectType,data.subjectId,data.event,data.eventKey,encrypt(data.email)]);
