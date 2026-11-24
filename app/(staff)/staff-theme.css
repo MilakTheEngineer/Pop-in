@@ -68,3 +68,18 @@
 @media (forced-colors: active) {
   .staff-shell .staff-rail a.selected { outline: 2px solid Highlight; outline-offset: -2px; }
 }
+
+/* Quiet shared navigation and secondary controls. */
+.staff-shell .staff-rail a:hover,.staff-shell .staff-extras-toggle:hover { background:#302b39; color:#fff5f0; }
+.staff-shell .staff-rail a.selected,.staff-shell .staff-rail a.selected:hover,.staff-shell .staff-extras-toggle.has-active { background:#403b49; color:#fff5f0; box-shadow:none; }
+.staff-shell .staff-rail a.selected svg { color:inherit; }
+.staff-shell .settings-tabs a:hover { background:#eee9ed; }
+.staff-shell .settings-tabs a.active { color:#403b49; }
+.staff-shell .settings-tabs a.active:after { background:#756c7a; height:2px; }
+.staff-shell :is(.outline,.row-edit,.photo-upload,.photo-remove,.settings-cancel) { background:#fffdfa; color:#332f37; border-color:#bdb7be; }
+.staff-shell :is(.outline,.row-edit,.photo-upload,.photo-remove,.settings-cancel):hover { background:#eee9ed; }
+.staff-shell :is(.today-view-switch button[aria-pressed='true'],.appearance-option:has(input:checked),.retention-thread.selected) { background:#e9e5e9; color:#332f37; border-color:#aaa2ab; box-shadow:none; }
+.staff-shell .source-toggle button.selected { background:#e9e5e9; color:#332f37; box-shadow:none; }
+.staff-shell :is(.staff-rail a,.staff-extras-toggle,.settings-tabs a,.outline,.row-edit,.photo-upload,.photo-remove,.settings-cancel,.today-view-switch button,.source-toggle button,.retention-thread):is(:hover,:active,[aria-pressed='true'],.selected,.active) { animation:none; filter:none; }
+.staff-shell :is(a,button,summary,[role=button]):focus-visible { outline:3px solid #65546c; outline-offset:3px; }
+.staff-shell :is(.topbar,.staff-rail) :is(a,button,select):focus-visible { outline:3px solid #eee4ef; outline-offset:2px; }
