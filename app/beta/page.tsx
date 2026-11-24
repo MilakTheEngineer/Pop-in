@@ -1,7 +1,2 @@
-import Link from 'next/link';
-import {approvedSetupAvailable} from '@/lib/setup-availability';
-import {currentStaff,isShopOwner,shopAccess} from '@/lib/auth';
-import {BetaWorkspace} from './workspace';
-import {BetaContact} from '@/app/beta-contact';
-export const dynamic='force-dynamic';
-export default async function BetaPage({searchParams}:{searchParams:Promise<{kind?:string}>}){const {kind}=await searchParams;const choice=kind==='founding'?'founding':'regular';const user=await currentStaff();if(!user){return <main className="setup-entry"><section className="setup-entry-card"><h1>Join the Varello beta</h1><p>{choice==='founding'?'Register Founder interest and we’ll be in touch.':'Register regular beta interest and we’ll be in touch. Regular beta: 60 days free from activation, after approval. No card. No automatic charge.'}</p><BetaContact kind={choice}/>{await approvedSetupAvailable()&&<p>Already approved to set up your shop? <Link href="/setup">Create your private shop</Link></p>}<Link className="outline" href={choice==='founding'?'/login?next=founder':'/login?next=beta'}>Sign in</Link></section></main>};const {shop}=await shopAccess();if(!await isShopOwner(user.id,shop.id))return <main className="setup-entry"><section className="setup-entry-card"><h1>Owner access required</h1><p>Ask your shop owner to manage the beta application.</p><Link href="/today">Back to Today</Link></section></main>;return <BetaWorkspace shopId={shop.id} initialKind={choice}/>}
+import {redirect} from 'next/navigation';
+export default function LegacyPage(){redirect('/')}
