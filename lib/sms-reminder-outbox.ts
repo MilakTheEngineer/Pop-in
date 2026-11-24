@@ -1,4 +1,5 @@
 import {smokeShop} from './isolated-smoke';
+import {reservePrepaid,settlePrepaid} from './sms-prepaid-ledger';
 import {randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {db} from './db';
@@ -57,7 +58,7 @@ export async function dispatchSmsReminder(sender:Sender= (to,p)=>sendWebSmsAppoi
  if(!smsSendingHours(at))return {status:'quiet_hours' as const};
  // Never retry a crash or lost provider response automatically.
  await db.query("UPDATE sms_reminder_outbox SET state='uncertain',updated_at=now() WHERE state='sending' AND updated_at<now()-interval '2 minutes'");
- const q=await db.connect();let row:{id:string;shop_id:string;subject_type:Subject;subject_id:string;starts_at:Date}|undefined;let reservedMobile='',reservedText='';
+ const q=await db.connect();let row:{id:string;shop_id:string;subject_type:Subject;subject_id:string;starts_at:Date}|undefined;let reservedMobile='',reservedText='',includedRemaining=0;
  try{await q.query('BEGIN');const claim=await q.query("SELECT id,shop_id,subject_type,subject_id,starts_at FROM sms_reminder_outbox WHERE state='pending' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1");if(!claim.rowCount){await q.query('COMMIT');return {status:'none' as const}}row=claim.rows[0];
   if(await smokeShop(row!.shop_id,q)||!await ready(row!.shop_id)){await q.query("UPDATE sms_reminder_outbox SET state='failed',updated_at=now() WHERE id=$1",[row!.id]);await q.query('COMMIT');return {status:'unavailable' as const}}
   const current=await lockCurrent(q,row!);if(!current||!current.mobile){await q.query("UPDATE sms_reminder_outbox SET state=$2,updated_at=now() WHERE id=$1",[row!.id,current?'failed':'superseded']);await q.query('COMMIT');return {status:'superseded' as const}}
@@ -66,24 +67,25 @@ export async function dispatchSmsReminder(sender:Sender= (to,p)=>sendWebSmsAppoi
   await q.query('SELECT id FROM beta_sms_pilot_lock WHERE id=1 FOR UPDATE');const plan=await planSnapshot(q,row!.shop_id,true);
   const month=(await q.query("SELECT date_trunc('month',now() AT TIME ZONE 'Pacific/Auckland')::date AS month")).rows[0].month;
   const usage=await q.query(`SELECT coalesce(sum(o.segments) FILTER(WHERE s.location_group_id=$1),0)::int AS used,coalesce(sum(o.segments),0)::int AS total FROM sms_reminder_outbox o JOIN shops s ON s.id=o.shop_id WHERE o.billing_month=$2 AND o.state IN ('sending','accepted','delivered','undelivered','uncertain')`,[plan.groupId,month]);
-  const limit=Number(process.env.WEBSMS_PILOT_MAX_PARTS||0);if(!Number.isSafeInteger(limit)||limit<1||usage.rows[0].used+p.segments>plan.plan.smsSegments||usage.rows[0].total+p.segments>limit){
+  includedRemaining=Math.max(0,plan.plan.smsSegments-usage.rows[0].used);const limit=Number(process.env.WEBSMS_PILOT_MAX_PARTS||0);const extra=Math.max(0,usage.rows[0].used+p.segments-plan.plan.smsSegments)-Math.max(0,usage.rows[0].used-plan.plan.smsSegments);const underCap=Number.isSafeInteger(limit)&&limit>=1&&usage.rows[0].total+p.segments<=limit;const funded=underCap&&(extra===0||await reservePrepaid(q,row!.shop_id,row!.id,extra));if(!funded){
    if(current.emailConsent)await enqueueBookingSnapshot(q,row!.shop_id,row!.subject_type,row!.subject_id,'reminder',`reminder/${row!.subject_type}/${row!.subject_id}/${row!.starts_at.toISOString()}`);
    await q.query("UPDATE sms_reminder_outbox SET state='failed',updated_at=now() WHERE id=$1",[row!.id]);await q.query('COMMIT');return {status:'capped' as const};
   }
   await q.query("UPDATE sms_reminder_outbox SET state='sending',segments=$2,billing_month=$3,updated_at=now() WHERE id=$1",[row!.id,p.segments,month]);await q.query('COMMIT');
  }catch(e){await q.query('ROLLBACK');throw e}finally{q.release()}
  const send=await db.connect();try{await send.query('BEGIN');const locked=await send.query("SELECT id,shop_id,subject_type,subject_id,starts_at FROM sms_reminder_outbox WHERE id=$1 AND state='sending' FOR UPDATE",[row!.id]);if(!locked.rowCount){await send.query('COMMIT');return {status:'uncertain' as const}}
-  const current=await lockCurrent(send,locked.rows[0]);if(await smokeShop(row!.shop_id,send)||!enabled()||!await ready(row!.shop_id)||!current||current.mobile!==reservedMobile||prepareWebSmsAppointment(current.name,current.startsAt).text!==reservedText){await send.query("UPDATE sms_reminder_outbox SET state='superseded',segments=0,updated_at=now() WHERE id=$1",[row!.id]);await send.query('COMMIT');return {status:'superseded' as const}}
+  const current=await lockCurrent(send,locked.rows[0]);if(await smokeShop(row!.shop_id,send)||!enabled()||!await ready(row!.shop_id)||!current||current.mobile!==reservedMobile||prepareWebSmsAppointment(current.name,current.startsAt).text!==reservedText){await send.query("UPDATE sms_reminder_outbox SET state='superseded',segments=0,updated_at=now() WHERE id=$1",[row!.id]);await settlePrepaid(send,row!.id,'released');await send.query('COMMIT');return {status:'superseded' as const}}
   const result=await sender(current.mobile,prepareWebSmsAppointment(current.name,current.startsAt));
   if(result.status==='accepted')await send.query("UPDATE sms_reminder_outbox SET provider_id=$2,state=COALESCE((SELECT CASE status WHEN 'DELIVRD' THEN 'delivered' ELSE 'undelivered' END FROM sms_delivery_receipts WHERE provider_id=$2),'accepted'),updated_at=now() WHERE id=$1",[row!.id,result.providerId]);
   else {if(result.status==='not_dispatched'&&current.emailConsent)await enqueueBookingSnapshot(send,row!.shop_id,row!.subject_type,row!.subject_id,'reminder',`reminder/${row!.subject_type}/${row!.subject_id}/${row!.starts_at.toISOString()}`);await send.query("UPDATE sms_reminder_outbox SET state=CASE WHEN $2='uncertain' THEN COALESCE((SELECT CASE status WHEN 'DELIVRD' THEN 'delivered' ELSE 'undelivered' END FROM sms_delivery_receipts WHERE provider_id=$3),'uncertain') ELSE $2 END,provider_id=$3,segments=CASE WHEN $2='failed' THEN 0 ELSE greatest(segments,coalesce($4,segments)) END,updated_at=now() WHERE id=$1",[row!.id,result.status==='uncertain'?'uncertain':'failed',result.status==='uncertain'?result.providerId??null:null,result.status==='uncertain'?result.parts??null:null]);}
-  await send.query('COMMIT');return {status:result.status};
+  if(result.status==='uncertain'&&result.parts){const owed=Math.max(0,result.parts-includedRemaining);if(owed>0){await send.query('SELECT id FROM shops WHERE id=$1 FOR UPDATE',[row!.shop_id]);await send.query("INSERT INTO sms_credit_reservations(outbox_id,shop_id,credits,state) VALUES($1,$2,$3,'reserved') ON CONFLICT(outbox_id) DO UPDATE SET credits=greatest(sms_credit_reservations.credits,EXCLUDED.credits) WHERE sms_credit_reservations.state='reserved'",[row!.id,row!.shop_id,owed]);}}
+  await settlePrepaid(send,row!.id,result.status==='not_dispatched'?'released':'consumed');await send.query('COMMIT');return {status:result.status};
  }catch(e){await send.query('ROLLBACK');throw e}finally{send.release()}
 }
 
 export async function recordSmsDelivery(providerId:string,status:string){
  if(!/^[A-Za-z0-9_-]{1,128}$/.test(providerId)||!['DELIVRD','UNDELIV','BLOCKED'].includes(status))return;
- const q=await db.connect();try{await q.query('BEGIN');await q.query("INSERT INTO sms_delivery_receipts(provider_id,status) VALUES($1,$2) ON CONFLICT(provider_id) DO UPDATE SET status=EXCLUDED.status,received_at=now()",[providerId,status]);await q.query("UPDATE sms_reminder_outbox SET state=CASE WHEN $2='DELIVRD' THEN 'delivered' ELSE 'undelivered' END,updated_at=now() WHERE provider_id=$1 AND state IN ('sending','accepted','uncertain')",[providerId,status]);await q.query('COMMIT')}catch(e){await q.query('ROLLBACK');throw e}finally{q.release()}
+ const q=await db.connect();try{await q.query('BEGIN');await q.query("INSERT INTO sms_delivery_receipts(provider_id,status) VALUES($1,$2) ON CONFLICT(provider_id) DO UPDATE SET status=EXCLUDED.status,received_at=now()",[providerId,status]);await q.query("UPDATE sms_reminder_outbox SET state=CASE WHEN $2='DELIVRD' THEN 'delivered' ELSE 'undelivered' END,updated_at=now() WHERE provider_id=$1 AND state IN ('sending','accepted','uncertain')",[providerId,status]);await q.query("UPDATE sms_credit_reservations SET state='consumed' WHERE state='reserved' AND outbox_id IN (SELECT id FROM sms_reminder_outbox WHERE provider_id=$1 AND state IN ('delivered','undelivered'))",[providerId]);await q.query('COMMIT')}catch(e){await q.query('ROLLBACK');throw e}finally{q.release()}
 }
 
 // A status check never resends a reminder. A missing provider ID needs manual
