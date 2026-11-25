@@ -83,3 +83,9 @@
 .staff-shell :is(.staff-rail a,.staff-extras-toggle,.settings-tabs a,.outline,.row-edit,.photo-upload,.photo-remove,.settings-cancel,.today-view-switch button,.source-toggle button,.retention-thread):is(:hover,:active,[aria-pressed='true'],.selected,.active) { animation:none; filter:none; }
 .staff-shell :is(a,button,summary,[role=button]):focus-visible { outline:3px solid #65546c; outline-offset:3px; }
 .staff-shell :is(.topbar,.staff-rail) :is(a,button,select):focus-visible { outline:3px solid #eee4ef; outline-offset:2px; }
+
+/* Secondary copy still needs normal-text contrast on warm cards and lilac pages. */
+.staff-shell :is(.onboard-hint,.onboard-step h2 small,.step-number:not(.complete),.settings-tabs a:not(.active),.settings-form-footer>span,.commerce-eyebrow,.commerce-heading p){color:var(--staff-muted)}
+
+.staff-shell .onboard-hint{color:var(--staff-muted)!important}
+.staff-shell .schedule-empty{color:var(--staff-muted)}

@@ -13,6 +13,7 @@ await database.exec('CREATE TABLE shops(id text primary key); INSERT INTO shops 
 await database.exec(await readFile('db/058_websms_test_delivery.sql','utf8'));
 await database.exec('CREATE TABLE location_groups(id text primary key); ALTER TABLE shops ADD COLUMN location_group_id text; CREATE TABLE beta_reminder_consent(entry_id text); CREATE TABLE beta_visit_reminder_consent(visit_id text);');
 await database.exec(await readFile('db/059_sms_reminder_outbox.sql','utf8'));
+await database.exec(await readFile('db/065_sms_prepaid.sql','utf8'));
 const server=new PGLiteSocketServer({db:database,port:56467,host:'127.0.0.1'});await server.start();
 const {db}=await import('../lib/db');
 const {sendApprovedWebSmsTest,recheckWebSmsTest,verifyWebSmsSignature,webSmsTestStatus}=await import('../lib/websms-test-delivery');

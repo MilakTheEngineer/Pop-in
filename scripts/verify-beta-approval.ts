@@ -9,7 +9,7 @@ const post=(page:typeof owner,path:string,data:Record<string,unknown>)=>page.eva
 const tag=randomUUID().slice(0,8),shop=`beta-${tag}`;
 try{
  await db.query('INSERT INTO shops(id,name,location,public_slug) VALUES($1,$2,$3,$1)',[shop,'Fictional beta shop','Rotorua']);await db.query("INSERT INTO memberships(staff_id,shop_id) VALUES('demo',$1)",[shop]);await db.query("INSERT INTO shop_owners(staff_id,shop_id) VALUES('demo',$1)",[shop]);
- await visitor.goto(base+'/beta?kind=regular');await visitor.getByLabel('Tell us about your shop').fill(`Fictional shop ${tag}`);await visitor.getByLabel('Reply email',{exact:true}).fill(`${tag}@example.test`);await visitor.getByRole('button',{name:'Send beta interest'}).click();await visitor.getByText('Thanks. Your beta interest was saved for review.').waitFor();
+ await visitor.goto(base+'/beta?kind=regular');assert.equal(new URL(visitor.url()).pathname,'/');const interest={id:randomUUID(),screen:'Beta',category:'idea',message:`Regular beta interest: Fictional shop ${tag}`,replyEmail:`${tag}@example.test`};assert.equal((await post(visitor,'/api/support',interest)).status,200);assert.equal((await post(visitor,'/api/support',interest)).status,200);
  await owner.goto(base+'/login');await owner.getByLabel('Email',{exact:true}).fill('demo@rimu.example');await owner.getByLabel('Password').fill(process.env.DEMO_PASSWORD!);await owner.getByRole('button',{name:'Sign in'}).click();await owner.waitForURL('**/today');
  assert.equal((await post(owner,'/api/beta',{action:'apply',shopId:shop,kind:'regular'})).status,200);assert.equal((await post(owner,'/api/beta',{action:'apply',shopId:shop,kind:'regular'})).status,200);
  assert.equal((await post(owner,'/api/beta',{action:'activate',shopId:shop})).status,400);

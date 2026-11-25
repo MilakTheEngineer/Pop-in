@@ -37,9 +37,9 @@ try {
   checks.guest='Barber, date, time, name and email survive Back and Forward.';
   stage='guest confirmation and duplicate prevention';
   await page.getByRole('button',{name:'Confirm booking'}).click();
-  await page.getByRole('heading',{name:'You’re booked in.'}).waitFor();
+  await page.getByRole('heading',{name:/You’re booked\. See you/}).waitFor();
   const link=await page.getByLabel('Your private link').inputValue();
-  await page.goBack(); await page.getByRole('heading',{name:'You’re booked in.'}).waitFor();
+  await page.goBack(); await page.getByRole('heading',{name:/You’re booked\. See you/}).waitFor();
   const found=await db.query('SELECT e.id FROM schedule_entries e JOIN guest_booking_links g ON g.entry_id=e.id WHERE g.email=$1',[email]);
   assert.equal(found.rowCount,1,'Back after confirmation must not create another appointment');
   checks.confirmed='Browser Back retains the confirmation and exactly one appointment.';

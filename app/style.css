@@ -181,3 +181,8 @@ body,.landing,.login-page,.setup-entry{background:#FFF5F0;color:#151024}
 @media(max-width:600px){.wordmark img{width:120px}.staff-shell .wordmark img{width:100px}.landing-header{padding-top:12px;padding-bottom:12px}}
 .beta-contact textarea,.setup-form textarea{width:100%;min-height:110px;margin-top:8px;padding:12px;border:1px solid #c8cec5;border-radius:6px;background:#fffefa;color:#151024;font:inherit;resize:vertical}
 .setup-entry-card>.setup-form{margin-top:22px}
+
+/* Keep the support launcher out of modal booking controls and tab order. */
+body:has(.panel-layer) .report-floating{visibility:hidden}
+
+@media(max-width:800px){body:has(.staff-shell) .report-floating{bottom:calc(14px + env(safe-area-inset-bottom))}.staff-shell .staff-main{padding-bottom:64px}}

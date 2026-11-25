@@ -36,7 +36,7 @@ try{
  assert.equal(saved.ends_at.toISOString(),'2027-09-25T14:15:00.000Z');
  results.timezoneEngine='30 elapsed minutes saved in UTC; nonexistent spring and ambiguous autumn local times rejected.';
  await page.goto(base+'/login');await page.getByLabel('Email').fill(email);await page.getByLabel('Password').fill(password);await page.getByRole('button',{name:'Sign in'}).click();await page.waitForURL('**/today');
- await page.goto(base+'/calendar');await page.waitForLoadState('networkidle');
+ await page.goto(base+'/calendar');
  const response=page.waitForResponse(r=>r.url().includes('/api/schedule?')&&new URL(r.url()).searchParams.get('date')===spring&&r.status()===200);
  await page.getByLabel('Calendar date').fill(spring);await response;
  const event=page.locator('.timeline-event').filter({hasText:'Spring QA'});await event.waitFor();
@@ -45,10 +45,10 @@ try{
  results.springGrid={label,leftPx:left,widthPx:width,expectedPx:66,passed:Math.abs(width-66)<0.1};
  const springHours=await page.locator('.timeline-hours span').allTextContents();results.springHours=springHours;
  await page.screenshot({path:`${folder}/${phase}-spring-timeline.png`,fullPage:false});
- if(process.env.QA_EXPECT_FIXED==='1'){
+ {
   assert.equal(left,99,'01:45 is 45 elapsed minutes after the first displayed hour');
   await track.click({position:{x:170,y:26}});await page.getByRole('heading',{name:'New booking'}).waitFor();
-  await page.locator('select[required] option[value="03:15"]').waitFor({state:'attached'});
+  await page.getByLabel('Service',{exact:true}).selectOption(service);await page.getByLabel('Available time').selectOption('03:15');
   assert.equal(await page.getByLabel('Available time').inputValue(),'03:15','clicking after the spring jump prefills the actual wall time');
   await page.getByLabel('Close',{exact:true}).click();
  }
@@ -64,18 +64,18 @@ try{
  await midnight.goto(base+'/login');await midnight.getByLabel('Email').fill(email);await midnight.getByLabel('Password').fill(password);await midnight.getByRole('button',{name:'Sign in'}).click();await midnight.waitForURL('**/today');
  const now=Temporal.Now.plainDateISO('Pacific/Auckland');
  const before=now.toZonedDateTime({timeZone:'Pacific/Auckland',plainTime:'23:59:00'}).toInstant().toString();
- await midnight.clock.install({time:new Date(before)});await midnight.goto(base+'/today');await midnight.waitForLoadState('networkidle');
- const beforeLabel=await midnight.locator('.workspace-date').innerText();await midnight.clock.fastForward('02:00');
- const afterLabel=await midnight.locator('.workspace-date').innerText(),expected=now.add({days:1}).toLocaleString('en-NZ',{weekday:'short',day:'numeric',month:'short'});
+ await midnight.clock.install({time:new Date(before)});await midnight.goto(base+'/today');
+ await midnight.locator('.staff-main[inert]').waitFor({state:'detached'});const beforeLabel=await midnight.locator('.workspace-date').innerText();await midnight.clock.fastForward('02:00');
+ const expected=now.add({days:1}).toLocaleString('en-NZ',{weekday:'short',day:'numeric',month:'short'});await midnight.waitForFunction(expected=>document.querySelector('.workspace-date')?.textContent===expected,expected,{timeout:5000});const afterLabel=await midnight.locator('.workspace-date').innerText();
  results.midnight={beforeLabel,afterLabel,expected,passed:afterLabel===expected};
  await midnight.screenshot({path:`${folder}/${phase}-midnight-today.png`,fullPage:false});
- if(process.env.QA_EXPECT_FIXED==='1'){
+ {
   assert.equal(width,66,'grid must use the 30 real minutes across the spring clock change');
   assert.ok(springHours.includes('01:00')&&springHours.includes('03:00')&&!springHours.includes('02:00'),'spring axis skips the missing hour');
   assert.equal(autumnWidth,198,'grid must use the 90 real minutes across the autumn clock change');
   assert.ok(autumnHours.includes('02:00 (+13:00)')&&autumnHours.includes('02:00 (+12:00)'),'autumn axis distinguishes the repeated hour');
   assert.equal(afterLabel,expected,'Today must advance when midnight passes');
-  await midnight.goto(base+'/calendar');await midnight.waitForLoadState('networkidle');await midnight.getByRole('button',{name:'Today',exact:true}).click();
+  await midnight.goto(base+'/calendar');await midnight.getByRole('button',{name:'Today',exact:true}).click();
   assert.equal(await midnight.getByLabel('Calendar date').inputValue(),now.add({days:1}).toString(),'Calendar Today selects the new Auckland date');
  }
  console.log(JSON.stringify(results));

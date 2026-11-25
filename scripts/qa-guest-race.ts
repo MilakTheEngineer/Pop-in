@@ -25,9 +25,9 @@ try{
  await Promise.all([one.getByRole('button',{name:'Confirm booking'}).click(),two.getByRole('button',{name:'Confirm booking'}).click()]);
  const responses=await Promise.all(requests);assert.deepEqual(responses.map(r=>r.status()).sort(),[200,400]);
  const winner=responses[0].status()===200?one:two,loser=winner===one?two:one;
- await winner.getByRole('heading',{name:'You’re booked in.'}).waitFor();await loser.locator('.guest-error[role=alert]').waitFor();
+ await winner.getByRole('heading',{name:/You’re booked\. See you/}).waitFor();await loser.locator('.guest-error[role=alert]').waitFor();
  assert.match(await loser.locator('.guest-error[role=alert]').innerText(),/details are still here/i);
- await loser.getByText('No times available on this day. Try another date or barber.').waitFor();
+ await loser.getByText('No times left on this date. Try another date or barber.').waitFor();
  const entries=(await db.query("SELECT e.customer_name,e.barber_id,e.starts_at,e.ends_at,g.price_cents FROM schedule_entries e JOIN guest_booking_links g ON g.entry_id=e.id WHERE e.shop_id=$1 AND e.status='booked'",[shop])).rows;
  assert.equal(entries.length,1);assert.equal(entries[0].barber_id,ari);assert.equal((entries[0].ends_at.getTime()-entries[0].starts_at.getTime())/60000,30);assert.equal(entries[0].price_cents,4500);
  await loser.getByLabel('Booking date').fill(tomorrow.toString());await loser.getByRole('button',{name:'9:00 am',exact:true}).click();await loser.getByRole('button',{name:'Continue',exact:true}).click();
