@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import {useEffect,useRef,useState} from 'react';
 import type {checkoutView} from '@/lib/checkout';
 import type {inventoryView} from '@/lib/commerce';
@@ -16,7 +17,7 @@ export function CommerceAddon({shopId,data,owner,refresh,disabled,onLockChange}:
  function add(e:React.FormEvent){e.preventDefault();const id=crypto.randomUUID(),body:Record<string,unknown>={id,action:'addLine',shopId,entryId:data.appointment.id,kind};if(kind==='product')Object.assign(body,{productId:product||inventory?.products[0]?.id,quantity});else{const secret=newCode(),next={...codes,[id]:secret};try{sessionStorage.setItem(codeKey,JSON.stringify(next));setCodes(next)}catch{setError('Browser session storage is required to preserve the prepaid code.');return}Object.assign(body,{code:secret,price,visits,serviceId:service||inventory?.services[0]?.id,validUntil:expiry})}send(body)}
  function redeem(e:React.FormEvent){e.preventDefault();send({id:crypto.randomUUID(),action:'redeem',shopId,entryId:data.appointment.id,code:redeemCode,amount:redeemKind==='gift_card'?redeemAmount:''})}
  const order=data.commerce,open=!order||order.status==='open',refundable=owner&&!!order&&['committed','paid'].includes(order.status),locked=disabled||busy||!!pending,paid=order?.status==='paid';
- return <section className="checkout-card commerce-addon"><div className="commerce-addon-head"><div><h2>Products &amp; prepaid</h2><p className="checkout-muted">Stock is confirmed when the sale is committed. Prepaid items are issued when fully paid.</p></div><a href="/products">{owner?'Manage stock':'View products'}</a></div>
+ return <section className="checkout-card commerce-addon"><div className="commerce-addon-head"><div><h2>Products &amp; prepaid</h2><p className="checkout-muted">Stock is confirmed when the sale is committed. Prepaid items are issued when fully paid.</p></div><Link href="/products">{owner?'Manage stock':'View products'}</Link></div>
  {pending&&<div className="checkout-warning" role="status">A previous request has an uncertain result. <button className="outline" type="button" disabled={disabled||busy} onClick={()=>send(pending)}>Retry previous request</button></div>}{error&&<p className="checkout-error" role="alert">{error}</p>}{notice&&<p className="checkout-success" role="status">{notice}</p>}
  {order?.status==='refunded'&&<p className="checkout-warning">This sale was refunded. Stock and prepaid balances were restored.</p>}
  {paid&&order?.lines.filter(l=>l.kind!=='product').map(l=><div className="checkout-code" key={l.id}><strong>{l.label} · …{l.code_last_four}</strong>{codes[l.id]?<><p>Give this private code to the customer now. It is only saved in this browser session.</p><code>{codes[l.id]}</code><button type="button" className="outline" onClick={()=>navigator.clipboard?.writeText(codes[l.id])}>Copy code</button></>:<p>The private code was created in another browser session and cannot be recovered here.</p>}</div>)}

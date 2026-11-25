@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --env-file=.env.qa scripts/qa-suite.mjs",
+    "typecheck": "tsc --noEmit",
     "qa:local": "node scripts/qa-suite.mjs",
     "qa:local:dev": "node scripts/qa-local-dev.mjs",
     "dev": "next dev -H 127.0.0.1 -p 3001",
@@ -17,7 +18,8 @@
     "reminders:local": "node --env-file=.env --import tsx scripts/reminders-local.ts",
     "waitlist:local": "node --env-file=.env --import tsx scripts/waitlist-local.ts",
     "campaigns:local": "node --env-file=.env --import tsx scripts/campaigns-local.ts",
-    "calendar:worker": "node --env-file=.env --import tsx scripts/calendar-worker.ts"
+    "calendar:worker": "node --env-file=.env --import tsx scripts/calendar-worker.ts",
+    "lint": "eslint app lib scripts"
   },
   "repository": {
     "type": "git",
@@ -49,9 +51,12 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
     "jsqr": "^1.4.0",
     "playwright": "^1.65.1",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }
